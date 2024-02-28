@@ -1,0 +1,99 @@
+name: Make Release
+on:
+  workflow_dispatch:
+  push:
+    tags:
+    - '*'
+    branches:
+    - '*'
+
+env:
+  SOLUTION_NAME: reactive_dlg
+  # Path to the solution file relative to the root of the project.
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        configuration: [Release]
+        platform: [x86]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v1
+
+    - name: Build
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      # Add additional options to the MSBuild command line here (like platform or verbosity level).
+      # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
+      run: msbuild /m /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} ${{ env.SOLUTION_NAME }}.sln
+
+    - name: Pack into a folder
+      run: |
+        mkdir pack
+        copy ${{ matrix.configuration }}/*.auf pack
+        xcopy assets pack /e /i
+        copy *.md pack
+        copy LICENSE pack
+      # pick up and add any files you may need.
+
+    - name: Upload the build as artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        path: pack/*
+        name: ${{ env.SOLUTION_NAME }}-${{ github.ref_name }}_${{ matrix.platform }}${{ matrix.configuration }}
+      # name can be anything as long as you can recognize.
+
+  release:
+    name: Create Release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: true # assuming a single artifact.
+
+    - name: Compress
+      run: |
+        cd artifacts
+        zip -r ../aviutl_${{ env.SOLUTION_NAME }}-${{ github.ref_name }}.zip *
+      # rename .zip file for downloading if necessary.
+
+    - name: Prepare release notes
+      id: release-notes
+      run: |
+        echo "name=${{ github.ref_name }} ($(TZ='Asia/Tokyo' date +'%Y-%m-%d'))" >> $GITHUB_OUTPUT
+        echo "### 更新内容" >> ReleaseNotes.txt
+        phase=0
+        IFS=$'\n'
+        cat artifacts/README.md | while read line; do
+          if [[ $phase == 0 ]]; then
+            if [[ $line =~ ^##*[[:space:]]{1,}'改版履歴'[[:space:]]*$ ]]; then phase=1; fi
+          elif [[ $phase == 1 ]]; then
+            if [[ $line =~ ^-[[:space:]] ]]; then phase=2; fi
+          elif [[ $line =~ ^(-|##*)[[:space:]] ]]; then break
+          else
+            echo ${line:2} >> ReleaseNotes.txt
+          fi
+        done
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: ${{ steps.release-notes.outputs.name }}
+        files: '*.zip'
+        body_path: ReleaseNotes.txt
