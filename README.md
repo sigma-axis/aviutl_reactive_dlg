@@ -188,7 +188,7 @@
   いくつか制約があります:
   1. キーボード入力を受け付けるのはドロップダウンリストを開いている間のみです．フォーカスが当たっているだけの状態では機能しません．
   1. ドロップダウンリストを開いている間は AviUtl で設定したショートカットキーは機能しません．
-  1. 半角英数の文字入力しか受け付けません（Windows 標準の仕様をそのまま引き継いでいるため）．
+  1. 半角英数の文字入力しか受け付けません（~~Windows 標準の仕様をそのまま引き継いでいるため~~ 追調査しましたが上手く動かない原因は不明）．
 
 - [設定ファイル](#dropdownkeyboard)でこの機能の有効化・無効化を切り替えられます．
 
@@ -275,8 +275,8 @@
   ```ini
   updown=1
   keys_decimal=shift
-  keys_boost=alt
   def_decimal=0
+  keys_boost=alt
   rate_boost=10
   updown_clamp=0
   ```
@@ -323,8 +323,8 @@ wheel=1
 keys_activate=ctrl
 reverse_wheel=0
 keys_decimal=shift
-keys_boost=alt
 def_decimal=0
+keys_boost=alt
 rate_boost=10
 cursor_react=1
 ```
