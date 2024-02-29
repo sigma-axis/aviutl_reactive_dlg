@@ -2,6 +2,8 @@
 
 拡張編集の設定ダイアログへのデータ入力・調整・操作方法を拡充するプラグインです．
 
+[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_reactive_dlg/releases)
+
 ## 機能紹介
 
 以下の機能があります．各機能は[設定ファイル](#設定ファイルについて)で個別に有効化 / 無効化できます．
@@ -46,6 +48,9 @@
 
    ![TAB文字幅の変更](https://github.com/sigma-axis/aviutl_reactive_dlg/assets/132639613/09c8ca94-b099-465a-872e-1ee7cd0dfa60)
 
+1. フォント選択などのドロップダウンリストから名前をキー入力して項目を選べる機能．[[詳細](#ドロップダウンリストから名前のキー入力で項目選択できる機能)]
+
+   TODO: video
 
 ## 動作要件
 
@@ -163,11 +168,8 @@
 画面更新の一括機能を有効にすると，1文字ずつではなく全ての文字が追加されてからプレビュー画面の更新が入るようになります．これで 100 文字入力しようが 1 フレーム分の画面更新だけで済むようになり，うっかり長時間待機してしまうようなことになりにくくなります．
 
 - [設定ファイル](#textboxtweaks)でこの機能の有効化・無効化を切り替えられます．
-
 - この機能は元々 hebiiro 様の[エディットボックス最適化プラグイン](https://github.com/hebiiro/AviUtl-Plugin-OptimizeEditBox)で実装されていたものと類似の機能ですが，最新版では削除されていて，後継の[アルティメットプラグイン](https://github.com/hebiiro/anti.aviutl.ultimate.plugin)の [EditBoxTweaker](https://github.com/hebiiro/anti.aviutl.ultimate.plugin/wiki/EditBoxTweaker) にも未搭載です．
-
   - [SplitWindow](https://github.com/hebiiro/AviUtl-Plugin-SplitWindow) との併用などで不具合があったため，修正・改変して搭載しています．後継の[アルティメットプラグイン](https://github.com/hebiiro/anti.aviutl.ultimate.plugin)の [Nest](https://github.com/hebiiro/anti.aviutl.ultimate.plugin/wiki/Nest) との共存も確認できています．
-
   - 私の[エディットボックス最適化プラグイン改造版](https://github.com/sigma-axis/AviUtl-Plugin-OptimizeEditBox)にも搭載していましたが，そちらは [EditBoxTweaker](https://github.com/hebiiro/anti.aviutl.ultimate.plugin/wiki/EditBoxTweaker) と競合します．方式も少し変更しています．
 
 ### テキスト入力ボックスでの `TAB` 文字の幅を調整できる機能
@@ -175,8 +177,20 @@
 テキストオブジェクトとスクリプト制御のテキスト入力ボックスの `TAB` 文字幅を，Windows 標準の `32` という値から変更できます．[設定ファイルを編集](#textboxtweaks)して変更してください．
 
 - テキストオブジェクト，スクリプト制御それぞれで個別の値を設定できます．
-
 - こちらも私の[エディットボックス最適化プラグイン改造版](https://github.com/sigma-axis/AviUtl-Plugin-OptimizeEditBox)で搭載していた機能ですが移植しました．
+
+### ドロップダウンリストから名前のキー入力で項目選択できる機能
+
+テキストオブジェクトのフォント指定や，アニメーション効果のスクリプトを選ぶ際のドロップダウンリストで，選びたいものの名前がわかっている場合，キーボード入力で名前の先頭を入力するとその項目に飛べるようになります．
+
+- 元来 Combo Box のコントロールが固有で持っている機能でしたが，AviUtl の特殊事情のためかきちんと働いていなかったのを再調整しました．
+
+  いくつか制約があります:
+  1. キーボード入力を受け付けるのはドロップダウンリストを開いている間のみです．フォーカスが当たっているだけの状態では機能しません．
+  1. ドロップダウンリストを開いている間は AviUtl で設定したショートカットキーは機能しません．
+  1. 半角英数の文字入力しか受け付けません（Windows 標準の仕様をそのまま引き継いでいるため）．
+
+- [設定ファイル](#dropdownkeyboard)でこの機能の有効化・無効化を切り替えられます．
 
 ## 設定ファイルについて
 
@@ -351,6 +365,12 @@ rate_boost=10
 - :arrow_backward: :arrow_forward: をクリックで小数点以下の最小単位で移動．
 - `Shift` キーを押しながらだと整数単位で移動．
 - `Alt` キーで小数点以下の最小単位の 10 倍移動．`Shift+Alt` で 10 ずつ移動．
+
+### `[Dropdown.Keyboard]`
+
+[フォント選択などのドロップダウンリストから名前のキー入力で選べる機能](#ドロップダウンリストから名前のキー入力で項目選択できる機能)の有効，無効を切り替えられます．
+
+- `search` が `0` のとき無効， `1` で有効になります．初期値だと `search=1` で有効．
 
 ## 謝辞
 

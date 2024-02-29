@@ -463,6 +463,41 @@ public:
 	}
 };
 
+// Combo Box でのキー入力．
+struct DropdownList : SettingDlg {
+private:
+	static inline constinit HWND combo = nullptr;
+	static LRESULT CALLBACK mainwindow_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto...)
+	{
+		// 設定ダイアログへの通常キー入力はなぜか
+		// AviUtl のメインウィンドウに送られるようになっている．
+		switch (message) {
+		case WM_KEYDOWN:
+		case WM_CHAR:
+			// 念のため無限ループに陥らないようガード．
+			if (combo != nullptr) {
+				auto t = combo; combo = nullptr;
+				::SendMessageW(t, message, wparam, lparam);
+				combo = t;
+				return 0;
+			}
+			break;
+		}
+		return ::DefSubclassProc(hwnd, message, wparam, lparam);
+	}
+	static uintptr_t hook_uid() { return SettingDlg::hook_uid() + 3; }
+
+public:
+	static void on_notify_open(HWND ctrl) {
+		combo = ctrl;
+		::SetWindowSubclass(exedit.fp->hwnd_parent, mainwindow_hook, hook_uid(), {});
+	}
+	static void on_notify_close() {
+		combo = nullptr;
+		::RemoveWindowSubclass(exedit.fp->hwnd_parent, mainwindow_hook, hook_uid());
+	}
+};
+
 
 ////////////////////////////////
 // 設定項目．
@@ -559,10 +594,15 @@ inline constinit struct Settings {
 		}
 	} trackBtn{ modkeys::shift, modkeys::alt, true, 10, true };
 
+	struct {
+		bool search;
+	} dropdownKbd{ true };
+
 	constexpr bool is_enabled() const
 	{
 		return textFocus.is_enabled() || textTweaks.is_enabled() ||
-			trackKbd.is_enabled() || trackMouse.is_enabled() || trackBtn.is_enabled();
+			trackKbd.is_enabled() || trackMouse.is_enabled() || trackBtn.is_enabled() ||
+			dropdownKbd.search;
 	}
 
 	void load(const char* ini_file)
@@ -619,6 +659,9 @@ inline constinit struct Settings {
 		load_bool(trackBtn., def_decimal,		"Track.Button");
 		load_gen (trackBtn., rate_boost,		"Track.Button",
 			[](auto x) { return std::clamp(x, modkey_set::min_rate_boost, modkey_set::max_rate_boost); }, /* id */);
+
+		load_bool(dropdownKbd., search,			"Dropdown.Keyboard");
+
 #undef load_bool
 #undef load_int
 #undef load_gen
@@ -921,6 +964,17 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 					return 0;
 				}
 				break;
+
+				// 開いている Combo Box の追跡．
+			case CBN_DROPDOWN:
+				if (settings.dropdownKbd.search && check_window_class(ctrl, WC_COMBOBOXW))
+					DropdownList::on_notify_open(ctrl);
+				break;
+
+			case CBN_CLOSEUP:
+				if (settings.dropdownKbd.search && check_window_class(ctrl, WC_COMBOBOXW))
+					DropdownList::on_notify_close();
+				break;
 			}
 		}
 		break;
@@ -1178,7 +1232,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.00"
+#define PLUGIN_VERSION	"v1.10-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
