@@ -50,7 +50,7 @@
 
 1. フォント選択などのドロップダウンリストから名前をキー入力して項目を選べる機能．[[詳細](#ドロップダウンリストから名前のキー入力で項目選択できる機能)]
 
-   TODO: video
+   https://github.com/sigma-axis/aviutl_reactive_dlg/assets/132639613/27d72205-ed26-4df3-b98c-37eeda60753e
 
 ## 動作要件
 
