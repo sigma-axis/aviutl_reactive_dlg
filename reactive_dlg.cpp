@@ -562,8 +562,12 @@ inline constinit struct Settings {
 		constexpr bool is_tabstops_enabled() const { return tabstops_text >= 0 || tabstops_script >= 0; }
 		constexpr static int16_t min_tabstops = -1, max_tabstops = 256;
 
-		constexpr bool is_enabled() const { return batch || is_tabstops_enabled(); }
-	} textTweaks{ true, -1, -1 };
+		int8_t tab_to_spaces_text, tab_to_spaces_script;
+		constexpr bool is_tab_to_spaces_enabled() const { return tab_to_spaces_text >= 0 || tab_to_spaces_script >= 0; }
+		constexpr static int8_t min_tab_to_spaces = -1, max_tab_to_spaces = 64;
+
+		constexpr bool is_enabled() const { return batch || is_tabstops_enabled() || is_tab_to_spaces_enabled(); }
+	} textTweaks{ true, -1, -1, -1, -1 };
 
 	struct : modkey_set {
 		bool updown, updown_clamp, escape;
@@ -646,6 +650,10 @@ inline constinit struct Settings {
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
 		load_gen (textTweaks., tabstops_script,	"TextBox.Tweaks",
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
+		load_gen (textTweaks., tab_to_spaces_text,		"TextBox.Tweaks",
+			[&](auto x) { return std::clamp(x, textTweaks.min_tab_to_spaces, textTweaks.max_tab_to_spaces); }, /* id */);
+		load_gen (textTweaks., tab_to_spaces_script,	"TextBox.Tweaks",
+			[&](auto x) { return std::clamp(x, textTweaks.min_tab_to_spaces, textTweaks.max_tab_to_spaces); }, /* id */);
 
 		load_bool(trackKbd., updown,			"Track.Keyboard");
 		load_bool(trackKbd., updown_clamp,		"Track.Keyboard");
@@ -795,6 +803,19 @@ inline bool focus_from_textbox(byte vkey, HWND edit_box)
 	return ::SetFocus(target) != nullptr;
 }
 
+// TAB 文字を指定数の空白文字で置き換える機能．
+inline int replace_tab_with_spaces(wchar_t ch, HWND edit_box) {
+	if (ch != L'\t') return -1;
+
+	switch (TextBox::edit_box_kind(edit_box)) {
+	case TextBox::kind::text:
+		return settings.textTweaks.tab_to_spaces_text;
+	case TextBox::kind::script:
+		return settings.textTweaks.tab_to_spaces_script;
+	}
+	std::unreachable();
+}
+
 // 上下キーでトラックバーの数値をテキストラベル上で増減する機能．
 inline bool delta_move_on_label(byte vkey)
 {
@@ -885,7 +906,8 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 	switch (message) {
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
-		if (focus_from_textbox(static_cast<byte>(wparam), hwnd)) {
+		if (settings.textFocus.is_enabled() &&
+			focus_from_textbox(static_cast<byte>(wparam), hwnd)) {
 			// prevent the character that is pressed now to be written to the edit box,
 			// by discarding input messages sent to this edit box.
 			// (for TAB key, takes effect only when ctrl is not pressed.)
@@ -893,6 +915,14 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 			discard_message(hwnd, message == WM_KEYDOWN ? WM_CHAR : WM_SYSCHAR);
 
 			// shouldn't pass to ::DefSubclassProc(). (for TAB key, takes effect only when ctrl is pressed.)
+			return 0;
+		}
+		break;
+	case WM_CHAR:
+		if (auto cnt = replace_tab_with_spaces(static_cast<wchar_t>(wparam), hwnd); cnt >= 0) {
+			// replace the message with the specified number of white space inputs.
+			while (--cnt >= 0)
+				::SendMessageW(hwnd, WM_CHAR, static_cast<WPARAM>(L' '), lparam);
 			return 0;
 		}
 		break;
@@ -935,7 +965,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 		if (auto ctrl = reinterpret_cast<HWND>(lparam); ctrl != nullptr) {
 			switch (wparam >> 16) {
 			case EN_SETFOCUS:
-				if (settings.textFocus.is_enabled() &&
+				if ((settings.textFocus.is_enabled() || settings.textTweaks.is_tab_to_spaces_enabled()) &&
 					TextBox::edit_box_kind(ctrl) != TextBox::kind::unspecified &&
 					TextBox::check_edit_box_style(ctrl))
 					// hook for shortcut keys to move the focus out of this edit box.
@@ -1246,7 +1276,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.11-beta1"
+#define PLUGIN_VERSION	"v1.11-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
