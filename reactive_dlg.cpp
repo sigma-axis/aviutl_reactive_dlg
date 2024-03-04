@@ -562,7 +562,7 @@ inline constinit struct Settings {
 		constexpr bool is_tabstops_enabled() const { return tabstops_text >= 0 || tabstops_script >= 0; }
 		constexpr static int16_t min_tabstops = -1, max_tabstops = 256;
 
-		constexpr bool is_enabled() const { return batch && is_tabstops_enabled(); }
+		constexpr bool is_enabled() const { return batch || is_tabstops_enabled(); }
 	} textTweaks{ true, -1, -1 };
 
 	struct : modkey_set {
