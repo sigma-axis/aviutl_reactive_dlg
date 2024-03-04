@@ -958,8 +958,10 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 	case WM_CHAR:
 		if (auto cnt = replace_tab_with_spaces(static_cast<wchar_t>(wparam), hwnd); cnt >= 0) {
 			// replace the message with the specified number of white space inputs.
-			while (--cnt >= 0)
-				::SendMessageW(hwnd, WM_CHAR, static_cast<WPARAM>(L' '), lparam);
+			if (cnt > 0)
+				// multiply the "repeat count" field in lparam to populate white spaces.
+				::SendMessageW(hwnd, WM_CHAR, static_cast<WPARAM>(L' '),
+					(lparam & 0xffff0000) | (0xffff & ((lparam & 0xffff) * cnt)));
 			return 0;
 		}
 		break;
@@ -1328,7 +1330,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.11-beta3"
+#define PLUGIN_VERSION	"v1.11-beta4"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
