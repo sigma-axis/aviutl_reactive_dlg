@@ -487,6 +487,8 @@ private:
 	}
 	static uintptr_t hook_uid() { return SettingDlg::hook_uid() + 3; }
 
+	static inline constinit HCURSOR cursor = nullptr;
+
 public:
 	static void on_notify_open(HWND ctrl) {
 		combo = ctrl;
@@ -495,6 +497,17 @@ public:
 	static void on_notify_close() {
 		combo = nullptr;
 		::RemoveWindowSubclass(exedit.fp->hwnd_parent, mainwindow_hook, hook_uid());
+	}
+
+	static HCURSOR get_cursor()
+	{
+		if (cursor == nullptr)
+			cursor = ::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(IDC_HAND));
+		return cursor;
+	}
+	static void free() {
+		//if (cursor != nullptr) ::DestroyCursor(cursor);
+		//cursor = nullptr;
 	}
 };
 
@@ -1013,7 +1026,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 
 			// if the track is found, change the cursor to hand.
 			if (TrackLabel::find_trackinfo(pt) != nullptr) {
-				::SetCursor(::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(IDC_HAND)));
+				::SetCursor(DropdownList::get_cursor());
 				return TRUE;
 			}
 		}
@@ -1186,6 +1199,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 		// at this moment, the setting dialog and the timeline window are already destroyed.
 		TextBox::batch.discard(hwnd, PrvMsg::NotifyUpdate);
 		KeyboardHook::unhook();
+		DropdownList::free();
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
@@ -1232,7 +1246,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.10"
+#define PLUGIN_VERSION	"v1.11-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
