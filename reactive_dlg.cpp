@@ -936,13 +936,6 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 	switch (message) {
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
-		if (settings.textTweaks.hide_cursor) {
-			// hide the cursor on keyboard inputs.
-			POINT pt;
-			::GetCursorPos(&pt);
-			::ScreenToClient(hwnd, &pt);
-			TextBox::hide_cursor.on_edit(pt);
-		}
 		if (settings.textFocus.is_enabled() &&
 			focus_from_textbox(static_cast<byte>(wparam), hwnd)) {
 			// prevent the character that is pressed now to be written to the edit box,
@@ -956,6 +949,13 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 		}
 		break;
 	case WM_CHAR:
+		if (settings.textTweaks.hide_cursor) {
+			// hide the cursor on keyboard inputs.
+			POINT pt;
+			::GetCursorPos(&pt);
+			::ScreenToClient(hwnd, &pt);
+			TextBox::hide_cursor.on_edit(pt);
+		}
 		if (auto cnt = replace_tab_with_spaces(static_cast<wchar_t>(wparam), hwnd); cnt >= 0) {
 			// replace the message with the specified number of white space inputs.
 			if (cnt > 0)
