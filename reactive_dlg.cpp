@@ -266,6 +266,32 @@ public:
 		WPARAM wparam{};
 		LPARAM lparam{};
 	} batch;
+
+	// テキスト入力中にカーソルを隠す機能．
+	static inline struct {
+	private:
+		static constexpr auto dist(const POINT& p1, const POINT& p2) {
+			// so-called L^\infty-distance.
+			return std::max(std::abs(p1.x - p2.x), std::abs(p1.y - p2.y));
+		}
+		bool hide = false;
+		POINT pos{};
+
+	public:
+		void reset() {
+			hide = false;
+		}
+		void on_move(const POINT& pt) {
+			if (!hide || dist(pt, pos) <= move_threshold) return;
+			hide = false;
+		}
+		void on_edit(const POINT& pt) {
+			hide = true;
+			pos = pt;
+		}
+		bool is_hidden() const { return hide; }
+		constexpr static int move_threshold = 8;
+	} hide_cursor;
 };
 
 // トラックバーの数値入力ボックス検索/操作．
@@ -557,6 +583,7 @@ inline constinit struct Settings {
 
 	struct {
 		bool batch;
+		bool hide_cursor;
 
 		int16_t tabstops_text, tabstops_script;
 		constexpr bool is_tabstops_enabled() const { return tabstops_text >= 0 || tabstops_script >= 0; }
@@ -566,8 +593,8 @@ inline constinit struct Settings {
 		constexpr bool is_tab_to_spaces_enabled() const { return tab_to_spaces_text >= 0 || tab_to_spaces_script >= 0; }
 		constexpr static int8_t min_tab_to_spaces = -1, max_tab_to_spaces = 64;
 
-		constexpr bool is_enabled() const { return batch || is_tabstops_enabled() || is_tab_to_spaces_enabled(); }
-	} textTweaks{ true, -1, -1, -1, -1 };
+		constexpr bool is_enabled() const { return batch || hide_cursor || is_tabstops_enabled() || is_tab_to_spaces_enabled(); }
+	} textTweaks{ true, false, -1, -1, -1, -1 };
 
 	struct : modkey_set {
 		bool updown, updown_clamp, escape;
@@ -646,6 +673,7 @@ inline constinit struct Settings {
 		load_key (textFocus., backward.mkeys,	"TextBox.Focus");
 
 		load_bool(textTweaks., batch,			"TextBox.Tweaks");
+		load_bool(textTweaks., hide_cursor,		"TextBox.Tweaks");
 		load_gen (textTweaks., tabstops_text,	"TextBox.Tweaks",
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
 		load_gen (textTweaks., tabstops_script,	"TextBox.Tweaks",
@@ -906,6 +934,13 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 	switch (message) {
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
+		if (settings.textTweaks.hide_cursor) {
+			// hide the cursor on keyboard inputs.
+			POINT pt;
+			::GetCursorPos(&pt);
+			::ScreenToClient(hwnd, &pt);
+			TextBox::hide_cursor.on_edit(pt);
+		}
 		if (settings.textFocus.is_enabled() &&
 			focus_from_textbox(static_cast<byte>(wparam), hwnd)) {
 			// prevent the character that is pressed now to be written to the edit box,
@@ -926,8 +961,22 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 			return 0;
 		}
 		break;
+
+	case WM_SETCURSOR:
+		// hide the cursor if specified.
+		if (settings.textTweaks.hide_cursor && TextBox::hide_cursor.is_hidden()) {
+			::SetCursor(nullptr);
+			return TRUE;
+		}
+		break;
+	case WM_MOUSEMOVE:
+		// show again the mouse cursor on move.
+		if (settings.textTweaks.hide_cursor)
+			TextBox::hide_cursor.on_move({ .x = static_cast<int16_t>(lparam & 0xffff), .y = static_cast<int16_t>(lparam >> 16) });
+		break;
 	case WM_KILLFOCUS:
 		::RemoveWindowSubclass(hwnd, text_box_hook, id);
+		if (settings.textTweaks.hide_cursor) TextBox::hide_cursor.reset();
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
@@ -965,7 +1014,8 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 		if (auto ctrl = reinterpret_cast<HWND>(lparam); ctrl != nullptr) {
 			switch (wparam >> 16) {
 			case EN_SETFOCUS:
-				if ((settings.textFocus.is_enabled() || settings.textTweaks.is_tab_to_spaces_enabled()) &&
+				if ((settings.textFocus.is_enabled() ||
+					settings.textTweaks.hide_cursor || settings.textTweaks.is_tab_to_spaces_enabled()) &&
 					TextBox::edit_box_kind(ctrl) != TextBox::kind::unspecified &&
 					TextBox::check_edit_box_style(ctrl))
 					// hook for shortcut keys to move the focus out of this edit box.
@@ -1276,7 +1326,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.11-beta2"
+#define PLUGIN_VERSION	"v1.11-beta3"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
