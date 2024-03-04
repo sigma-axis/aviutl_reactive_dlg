@@ -949,7 +949,7 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 		}
 		break;
 	case WM_CHAR:
-		if (settings.textTweaks.hide_cursor) {
+		if (settings.textTweaks.hide_cursor && !TextBox::hide_cursor.is_hidden()) {
 			// hide the cursor on keyboard inputs.
 			POINT pt;
 			::GetCursorPos(&pt);
