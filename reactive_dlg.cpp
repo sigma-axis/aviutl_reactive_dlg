@@ -487,6 +487,21 @@ public:
 		set_edit_selection_all(info->hwnd_label);
 		return true;
 	}
+
+private:
+	static inline constinit HCURSOR cursor = nullptr;
+
+public:
+	static HCURSOR get_cursor()
+	{
+		if (cursor == nullptr)
+			cursor = ::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(IDC_HAND));
+		return cursor;
+	}
+	static void free() {
+		//if (cursor != nullptr) ::DestroyCursor(cursor);
+		//cursor = nullptr;
+	}
 };
 
 // Combo Box でのキー入力．
@@ -513,8 +528,6 @@ private:
 	}
 	static uintptr_t hook_uid() { return SettingDlg::hook_uid() + 3; }
 
-	static inline constinit HCURSOR cursor = nullptr;
-
 public:
 	static void on_notify_open(HWND ctrl) {
 		combo = ctrl;
@@ -523,17 +536,6 @@ public:
 	static void on_notify_close() {
 		combo = nullptr;
 		::RemoveWindowSubclass(exedit.fp->hwnd_parent, mainwindow_hook, hook_uid());
-	}
-
-	static HCURSOR get_cursor()
-	{
-		if (cursor == nullptr)
-			cursor = ::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(IDC_HAND));
-		return cursor;
-	}
-	static void free() {
-		//if (cursor != nullptr) ::DestroyCursor(cursor);
-		//cursor = nullptr;
 	}
 };
 
@@ -1106,7 +1108,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 
 			// if the track is found, change the cursor to hand.
 			if (TrackLabel::find_trackinfo(pt) != nullptr) {
-				::SetCursor(DropdownList::get_cursor());
+				::SetCursor(TrackLabel::get_cursor());
 				return TRUE;
 			}
 		}
@@ -1279,7 +1281,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 		// at this moment, the setting dialog and the timeline window are already destroyed.
 		TextBox::batch.discard(hwnd, PrvMsg::NotifyUpdate);
 		KeyboardHook::unhook();
-		DropdownList::free();
+		TrackLabel::free();
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
