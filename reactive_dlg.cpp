@@ -955,12 +955,14 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 		}
 		if (message != WM_CHAR) break;
 
+		// replace a TAB with white spaces.
 		if (auto cnt = replace_tab_with_spaces(static_cast<wchar_t>(wparam), hwnd); cnt >= 0) {
-			// replace the message with the specified number of white space inputs.
-			if (cnt > 0)
-				// multiply the "repeat count" field in lparam to populate white spaces.
-				::SendMessageW(hwnd, WM_CHAR, static_cast<WPARAM>(L' '),
-					(lparam & 0xffff0000) | (0xffff & ((lparam & 0xffff) * cnt)));
+			// prepare a string with the specified number of white spaces.
+			wchar_t s[settings.textTweaks.max_tab_to_spaces + 1];
+			std::wmemset(s, L' ', cnt); s[cnt] = L'\0';
+
+			// insert the string.
+			::DefSubclassProc(hwnd, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(s));
 			return 0;
 		}
 		break;
