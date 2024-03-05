@@ -278,19 +278,14 @@ public:
 		POINT pos{};
 
 	public:
-		void reset() {
-			hide = false;
-		}
+		bool is_hidden() const { return hide; }
+		void reset() { hide = false; }
+		void on_edit(const POINT& pt) { hide = true; pos = pt; }
 		void on_move(const POINT& pt) {
+			constexpr int move_threshold = 8;
 			if (!hide || dist(pt, pos) <= move_threshold) return;
 			hide = false;
 		}
-		void on_edit(const POINT& pt) {
-			hide = true;
-			pos = pt;
-		}
-		bool is_hidden() const { return hide; }
-		constexpr static int move_threshold = 8;
 	} hide_cursor;
 };
 
@@ -948,7 +943,9 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 			return 0;
 		}
 		break;
+
 	case WM_CHAR:
+	case WM_IME_COMPOSITION:
 		if (settings.textTweaks.hide_cursor && !TextBox::hide_cursor.is_hidden()) {
 			// hide the cursor on keyboard inputs.
 			POINT pt;
@@ -956,6 +953,8 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 			::ScreenToClient(hwnd, &pt);
 			TextBox::hide_cursor.on_edit(pt);
 		}
+		if (message != WM_CHAR) break;
+
 		if (auto cnt = replace_tab_with_spaces(static_cast<wchar_t>(wparam), hwnd); cnt >= 0) {
 			// replace the message with the specified number of white space inputs.
 			if (cnt > 0)
@@ -970,7 +969,7 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 		// hide the cursor if specified.
 		if (settings.textTweaks.hide_cursor && TextBox::hide_cursor.is_hidden()) {
 			::SetCursor(nullptr);
-			return TRUE;
+			return FALSE; // prioritize the parent window's choice of the cursor shape.
 		}
 		break;
 	case WM_MOUSEMOVE:
@@ -1186,7 +1185,7 @@ class KeyboardHook {
 				if (auto hwnd = mouse_window(); hwnd != nullptr &&
 					(dlg == hwnd || ::IsChild(dlg, hwnd))) {
 					// post a message to determine the cursor shape.
-					::PostMessageW(dlg, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (WM_MOUSEMOVE << 16));
+					::PostMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (WM_MOUSEMOVE << 16));
 				}
 			}
 		}
