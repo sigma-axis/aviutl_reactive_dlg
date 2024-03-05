@@ -219,7 +219,7 @@ public:
 	}
 
 	// テキスト入力の画面反映処理を一括する機能．
-	inline static struct {
+	inline static constinit struct {
 		void operator()()
 		{
 			// ignore unexpected calls.
@@ -268,7 +268,7 @@ public:
 	} batch;
 
 	// テキスト入力中にカーソルを隠す機能．
-	static inline struct {
+	static inline constinit struct {
 	private:
 		static constexpr auto dist(const POINT& p1, const POINT& p2) {
 			// so-called L^\infty-distance.
@@ -413,8 +413,8 @@ public:
 
 private:
 	// manipulation of the currently selected trackbar.
-	inline constinit static const TrackInfo* info = nullptr;
-	inline constinit static wchar_t last_text[15] = L"";
+	static inline constinit const TrackInfo* info = nullptr;
+	static inline constinit wchar_t last_text[15] = L"";
 
 public:
 	static const TrackInfo& curr_info() { return *info; }
@@ -815,6 +815,19 @@ inline void set_tabstops(HWND hwnd)
 	});
 }
 
+// TAB 文字を指定数の空白文字で置き換える機能．
+inline int replace_tab_with_spaces(wchar_t ch, HWND edit_box) {
+	if (ch != L'\t') return -1;
+
+	switch (TextBox::edit_box_kind(edit_box)) {
+	case TextBox::kind::text:
+		return settings.textTweaks.tab_to_spaces_text;
+	case TextBox::kind::script:
+		return settings.textTweaks.tab_to_spaces_script;
+	}
+	std::unreachable();
+}
+
 // 指定キーでフォーカスをテキストボックスから移動する機能．
 inline bool focus_from_textbox(byte vkey, HWND edit_box)
 {
@@ -831,19 +844,6 @@ inline bool focus_from_textbox(byte vkey, HWND edit_box)
 
 	// non-null seems to mean the focus moved successfully.
 	return ::SetFocus(target) != nullptr;
-}
-
-// TAB 文字を指定数の空白文字で置き換える機能．
-inline int replace_tab_with_spaces(wchar_t ch, HWND edit_box) {
-	if (ch != L'\t') return -1;
-
-	switch (TextBox::edit_box_kind(edit_box)) {
-	case TextBox::kind::text:
-		return settings.textTweaks.tab_to_spaces_text;
-	case TextBox::kind::script:
-		return settings.textTweaks.tab_to_spaces_script;
-	}
-	std::unreachable();
 }
 
 // 上下キーでトラックバーの数値をテキストラベル上で増減する機能．
