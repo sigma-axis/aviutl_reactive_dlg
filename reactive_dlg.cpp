@@ -13,6 +13,8 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <cstdint>
 #include <algorithm>
 #include <cstring>
+#include <string>
+#include <memory>
 #include <bit>
 #include <concepts>
 
@@ -155,6 +157,23 @@ inline void discard_message(HWND hwnd, UINT message) {
 	MSG msg;
 	while (::PeekMessageW(&msg, hwnd, message, message, PM_REMOVE));
 }
+
+
+////////////////////////////////
+// 文字エンコード変換．
+////////////////////////////////
+struct Encodes {
+	template<UINT codepage = CP_UTF8>
+	static std::wstring to_wstring(const std::string_view& src) {
+		if (src.length() == 0) return L"";
+
+		auto wlen = ::MultiByteToWideChar(codepage, 0, src.data(), src.length(), nullptr, 0);
+		std::wstring ret(wlen, L'\0');
+		::MultiByteToWideChar(CP_UTF8, 0, src.data(), src.length(), ret.data(), wlen);
+
+		return ret;
+	}
+};
 
 
 ////////////////////////////////
@@ -483,20 +502,41 @@ public:
 		return true;
 	}
 
-private:
-	static inline constinit HCURSOR cursor = nullptr;
+	// ホイール操作時のカーソルのハンドルキャッシュ．
+	// 将来的にはユーザ指定のファイルを読み込んでもいいかも．
+	static inline constinit struct {
+		HCURSOR get()
+		{
+			if (handle == nullptr)
+				handle = ::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(IDC_HAND));
+			return handle;
+		}
+		//HCURSOR get(const auto& info)
+		//{
+		//	if (handle == nullptr) {
+		//		if (info.file != nullptr) {
+		//			handle = ::LoadCursorFromFileW(info.file);
+		//			info.id = reinterpret_cast<PCWSTR>(IDC_HAND); // fallback.
+		//		}
+		//		if (handle == nullptr) {
+		//			shared = true;
+		//			handle = ::LoadCursorW(nullptr, info.id);
+		//		}
+		//	}
+		//	return handle;
+		//}
+		void free() {
+			//if (handle != nullptr) {
+			//	if (!shared) ::DestroyCursor(handle);
+			//	handle = nullptr;
+			//	shared = false;
+			//}
+		}
 
-public:
-	static HCURSOR get_cursor()
-	{
-		if (cursor == nullptr)
-			cursor = ::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(IDC_HAND));
-		return cursor;
-	}
-	static void free() {
-		//if (cursor != nullptr) ::DestroyCursor(cursor);
-		//cursor = nullptr;
-	}
+	private:
+		HCURSOR handle = nullptr;
+		//bool shared = false;
+	} cursor;
 };
 
 // Combo Box でのキー入力．
@@ -586,12 +626,12 @@ inline constinit struct Settings {
 		constexpr bool is_tabstops_enabled() const { return tabstops_text >= 0 || tabstops_script >= 0; }
 		constexpr static int16_t min_tabstops = -1, max_tabstops = 256;
 
-		int8_t tab_to_spaces_text, tab_to_spaces_script;
-		constexpr bool is_tab_to_spaces_enabled() const { return tab_to_spaces_text >= 0 || tab_to_spaces_script >= 0; }
-		constexpr static int8_t min_tab_to_spaces = -1, max_tab_to_spaces = 64;
+		std::unique_ptr<std::wstring> replace_tab_text, replace_tab_script;
+		constexpr bool is_replace_tab_enabled() const { return replace_tab_text || replace_tab_script; }
+		constexpr static size_t max_replace_tab_length = 256;
 
-		constexpr bool is_enabled() const { return batch || hide_cursor || is_tabstops_enabled() || is_tab_to_spaces_enabled(); }
-	} textTweaks{ true, false, -1, -1, -1, -1 };
+		constexpr bool is_enabled() const { return batch || hide_cursor || is_tabstops_enabled() || is_replace_tab_enabled(); }
+	} textTweaks{ true, false, -1, -1, nullptr, nullptr };
 
 	struct : modkey_set {
 		bool updown, updown_clamp, escape;
@@ -657,11 +697,19 @@ inline constinit struct Settings {
 			::GetPrivateProfileStringA(section, key, def.canon_name(), str, std::size(str), ini_file);
 			return modkeys{ str, def };
 		};
+		auto read_string = [&]<size_t max_len>(const char* section, const char* key) {
+			char str[max_len + 1];
+			::GetPrivateProfileStringA(section, key, "\t", str, std::size(str), ini_file);
+			if (str[0] == '\t' && str[1] == '\0')
+				return std::unique_ptr<std::wstring>{ nullptr };
+			return std::make_unique<std::wstring>(Encodes::to_wstring(str));
+		};
 #define load_gen(head, tgt, section, read, write)	head##tgt = read##(read_raw(write##(head##tgt), section, #tgt))
 #define load_int(head, tgt, section)	load_gen(head, tgt, section, /* id */, /* id */)
 #define load_bool(head, tgt, section)	load_gen(head, tgt, section, \
 			[](auto y) { return y != 0; }, [](auto x) { return x ? 1 : 0; })
 #define load_key(head, tgt, section)	head##tgt = read_modkey(head##tgt, section, #tgt)
+#define load_str(head, tgt, section, max)	head##tgt = read_string.operator()<max>(section, #tgt)
 
 		load_int (textFocus., forward.vkey,		"TextBox.Focus");
 		load_key (textFocus., forward.mkeys,	"TextBox.Focus");
@@ -675,10 +723,8 @@ inline constinit struct Settings {
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
 		load_gen (textTweaks., tabstops_script,	"TextBox.Tweaks",
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
-		load_gen (textTweaks., tab_to_spaces_text,		"TextBox.Tweaks",
-			[&](auto x) { return std::clamp(x, textTweaks.min_tab_to_spaces, textTweaks.max_tab_to_spaces); }, /* id */);
-		load_gen (textTweaks., tab_to_spaces_script,	"TextBox.Tweaks",
-			[&](auto x) { return std::clamp(x, textTweaks.min_tab_to_spaces, textTweaks.max_tab_to_spaces); }, /* id */);
+		load_str (textTweaks., replace_tab_text,	"TextBox.Tweaks", textTweaks.max_replace_tab_length);
+		load_str (textTweaks., replace_tab_script,	"TextBox.Tweaks", textTweaks.max_replace_tab_length);
 
 		load_bool(trackKbd., updown,			"Track.Keyboard");
 		load_bool(trackKbd., updown_clamp,		"Track.Keyboard");
@@ -708,6 +754,8 @@ inline constinit struct Settings {
 
 		load_bool(dropdownKbd., search,			"Dropdown.Keyboard");
 
+#undef load_str
+#undef load_key
 #undef load_bool
 #undef load_int
 #undef load_gen
@@ -810,15 +858,15 @@ inline void set_tabstops(HWND hwnd)
 	});
 }
 
-// TAB 文字を指定数の空白文字で置き換える機能．
-inline int replace_tab_with_spaces(wchar_t ch, HWND edit_box) {
-	if (ch != L'\t') return -1;
+// TAB 文字を別の文字列で置き換える機能．
+inline std::wstring* replace_tab(wchar_t ch, HWND edit_box) {
+	if (ch != L'\t') return nullptr;
 
 	switch (TextBox::edit_box_kind(edit_box)) {
 	case TextBox::kind::text:
-		return settings.textTweaks.tab_to_spaces_text;
+		return settings.textTweaks.replace_tab_text.get();
 	case TextBox::kind::script:
-		return settings.textTweaks.tab_to_spaces_script;
+		return settings.textTweaks.replace_tab_script.get();
 	}
 	std::unreachable();
 }
@@ -956,13 +1004,8 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 		if (message != WM_CHAR) break;
 
 		// replace a TAB with white spaces.
-		if (auto cnt = replace_tab_with_spaces(static_cast<wchar_t>(wparam), hwnd); cnt >= 0) {
-			// prepare a string with the specified number of white spaces.
-			wchar_t s[settings.textTweaks.max_tab_to_spaces + 1];
-			std::wmemset(s, L' ', cnt); s[cnt] = L'\0';
-
-			// insert the string.
-			::DefSubclassProc(hwnd, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(s));
+		if (auto* wstr = replace_tab(static_cast<wchar_t>(wparam), hwnd); wstr != nullptr) {
+			::DefSubclassProc(hwnd, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(wstr->c_str()));
 			return 0;
 		}
 		break;
@@ -1020,7 +1063,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 			switch (wparam >> 16) {
 			case EN_SETFOCUS:
 				if ((settings.textFocus.is_enabled() ||
-					settings.textTweaks.hide_cursor || settings.textTweaks.is_tab_to_spaces_enabled()) &&
+					settings.textTweaks.hide_cursor || settings.textTweaks.is_replace_tab_enabled()) &&
 					TextBox::edit_box_kind(ctrl) != TextBox::kind::unspecified &&
 					TextBox::check_edit_box_style(ctrl))
 					// hook for shortcut keys to move the focus out of this edit box.
@@ -1111,7 +1154,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 
 			// if the track is found, change the cursor to hand.
 			if (TrackLabel::find_trackinfo(pt) != nullptr) {
-				::SetCursor(TrackLabel::get_cursor());
+				::SetCursor(TrackLabel::cursor.get());
 				return TRUE;
 			}
 		}
@@ -1284,7 +1327,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 		// at this moment, the setting dialog and the timeline window are already destroyed.
 		TextBox::batch.discard(hwnd, PrvMsg::NotifyUpdate);
 		KeyboardHook::unhook();
-		TrackLabel::free();
+		TrackLabel::cursor.free();
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
