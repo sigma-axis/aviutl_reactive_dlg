@@ -169,7 +169,7 @@ struct Encodes {
 
 		auto wlen = ::MultiByteToWideChar(codepage, 0, src.data(), src.length(), nullptr, 0);
 		std::wstring ret(wlen, L'\0');
-		::MultiByteToWideChar(CP_UTF8, 0, src.data(), src.length(), ret.data(), wlen);
+		::MultiByteToWideChar(codepage, 0, src.data(), src.length(), ret.data(), wlen);
 
 		return ret;
 	}
