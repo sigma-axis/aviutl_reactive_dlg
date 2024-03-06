@@ -697,10 +697,10 @@ inline constinit struct Settings {
 			::GetPrivateProfileStringA(section, key, def.canon_name(), str, std::size(str), ini_file);
 			return modkeys{ str, def };
 		};
-		auto read_string = [&]<size_t max_len>(const char* section, const char* key) {
+		auto read_string = [&]<size_t max_len>(const char* def, const char* section, const char* key) {
 			char str[max_len + 1];
-			::GetPrivateProfileStringA(section, key, "\t", str, std::size(str), ini_file);
-			if (str[0] == '\t' && str[1] == '\0')
+			::GetPrivateProfileStringA(section, key, def, str, std::size(str), ini_file);
+			if (std::strcmp(str, def) == 0)
 				return std::unique_ptr<std::wstring>{ nullptr };
 			return std::make_unique<std::wstring>(Encodes::to_wstring(str));
 		};
@@ -709,7 +709,7 @@ inline constinit struct Settings {
 #define load_bool(head, tgt, section)	load_gen(head, tgt, section, \
 			[](auto y) { return y != 0; }, [](auto x) { return x ? 1 : 0; })
 #define load_key(head, tgt, section)	head##tgt = read_modkey(head##tgt, section, #tgt)
-#define load_str(head, tgt, section, max)	head##tgt = read_string.operator()<max>(section, #tgt)
+#define load_str(head, tgt, section, def, max)	head##tgt = read_string.operator()<max>(def, section, #tgt)
 
 		load_int (textFocus., forward.vkey,		"TextBox.Focus");
 		load_key (textFocus., forward.mkeys,	"TextBox.Focus");
@@ -723,8 +723,8 @@ inline constinit struct Settings {
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
 		load_gen (textTweaks., tabstops_script,	"TextBox.Tweaks",
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
-		load_str (textTweaks., replace_tab_text,	"TextBox.Tweaks", textTweaks.max_replace_tab_length);
-		load_str (textTweaks., replace_tab_script,	"TextBox.Tweaks", textTweaks.max_replace_tab_length);
+		load_str (textTweaks., replace_tab_text,	"TextBox.Tweaks", "\t", textTweaks.max_replace_tab_length);
+		load_str (textTweaks., replace_tab_script,	"TextBox.Tweaks", "\t", textTweaks.max_replace_tab_length);
 
 		load_bool(trackKbd., updown,			"Track.Keyboard");
 		load_bool(trackKbd., updown_clamp,		"Track.Keyboard");
@@ -859,7 +859,7 @@ inline void set_tabstops(HWND hwnd)
 }
 
 // TAB 文字を別の文字列で置き換える機能．
-inline std::wstring* replace_tab(wchar_t ch, HWND edit_box) {
+inline std::wstring const* replace_tab(wchar_t ch, HWND edit_box) {
 	if (ch != L'\t') return nullptr;
 
 	switch (TextBox::edit_box_kind(edit_box)) {
@@ -1005,8 +1005,13 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 
 		// replace a TAB with white spaces.
 		if (auto* wstr = replace_tab(static_cast<wchar_t>(wparam), hwnd); wstr != nullptr) {
-			::DefSubclassProc(hwnd, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(wstr->c_str()));
-			return 0;
+			if (wstr->length() != 1) {
+				::DefSubclassProc(hwnd, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(wstr->c_str()));
+				return 0;
+			}
+			// for a single character, just replace a certain parameter,
+			// which works a bit better with undo-ing feature.
+			wparam = static_cast<WPARAM>((*wstr)[0]);
 		}
 		break;
 
@@ -1374,7 +1379,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.11-beta4"
+#define PLUGIN_VERSION	"v1.11-beta5"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
