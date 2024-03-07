@@ -1027,10 +1027,10 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 	case WM_MBUTTONDOWN:
 	case WM_XBUTTONDOWN:
 		// show again the mouse cursor on clicks.
-		if (settings.textTweaks.hide_cursor) {
+		if (settings.textTweaks.hide_cursor && TextBox::hide_cursor.is_hidden()) {
 			TextBox::hide_cursor.reset();
 			// since this click initiates dragging, WM_SETCURSOR won't be sent automatically.
-			::SendMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (message << 16));
+			::PostMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (message << 16));
 		}
 		break;
 	case WM_MOUSEMOVE:
@@ -1390,7 +1390,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.20"
+#define PLUGIN_VERSION	"v1.21-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
