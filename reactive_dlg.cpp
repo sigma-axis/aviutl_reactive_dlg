@@ -245,13 +245,13 @@ public:
 			if (!posted) return;
 			posted = false;
 
-			batch_call = true;
+			calling = true;
 			// calling exedit.setting_dlg_wndproc() would be faster,
 			// but might ignore hooks from other plugins.
 			::SendMessageW(hwnd, message, wparam, lparam);
-			batch_call = false;
+			calling = false;
 		}
-		bool is_batch_call() const { return batch_call; }
+		bool is_calling() const { return calling; }
 		void post(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, HWND hwnd_host, UINT message_host)
 		{
 			// update message parameters.
@@ -277,7 +277,7 @@ public:
 		bool posted = false;
 
 		// indicates if it's a delayed batch call.
-		bool batch_call = false;
+		bool calling = false;
 
 		// message paramters.
 		HWND hwnd{};
@@ -1026,11 +1026,15 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 	case WM_RBUTTONDOWN:
 	case WM_MBUTTONDOWN:
 	case WM_XBUTTONDOWN:
+	case WM_LBUTTONUP:
+	case WM_RBUTTONUP:
+	case WM_MBUTTONUP:
+	case WM_XBUTTONUP:
 		// show again the mouse cursor on clicks.
 		if (settings.textTweaks.hide_cursor && TextBox::hide_cursor.is_hidden()) {
 			TextBox::hide_cursor.reset();
 			// since this click initiates dragging, WM_SETCURSOR won't be sent automatically.
-			::PostMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (message << 16));
+			::SendMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (message << 16));
 		}
 		break;
 	case WM_MOUSEMOVE:
@@ -1096,7 +1100,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 
 			case EN_CHANGE:
 				if (settings.textTweaks.batch &&
-					!TextBox::batch.is_batch_call() &&
+					!TextBox::batch.is_calling() &&
 					TextBox::edit_box_kind(ctrl) != TextBox::kind::unspecified &&
 					// 未確定文字がある状態でフォーカスが移動した場合 WM_KILLFOCUS -> EN_CHANGE の順になるので，その場面に対応するためコメントアウト．
 					//::GetFocus() == ctrl &&
@@ -1390,7 +1394,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.21-beta1"
+#define PLUGIN_VERSION	"v1.21-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
