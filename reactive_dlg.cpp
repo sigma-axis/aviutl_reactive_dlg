@@ -1142,7 +1142,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 	case WM_MOUSEWHEEL:
 		if (settings.trackMouse.wheel &&
 			*exedit.SettingDialogObjectIndex >= 0) {
-			auto keys = modkeys{ (wparam & MK_CONTROL) != 0, (wparam & MK_SHIFT) != 0, key_pressed_any(VK_MENU) };
+			modkeys keys{ (wparam & MK_CONTROL) != 0, (wparam & MK_SHIFT) != 0, key_pressed_any(VK_MENU) };
 
 			// check for the activation key.
 			if (!settings.trackMouse.is_activated(keys) ||
@@ -1344,7 +1344,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 		}
 		break;
 	case Message::Exit:
-		// at this moment, the setting dialog and the timeline window are already destroyed.
+		// at this moment, the setting dialog is already destroyed.
 		TextBox::batch.discard(hwnd, PrvMsg::NotifyUpdate);
 		KeyboardHook::unhook();
 		TrackLabel::cursor.free();
