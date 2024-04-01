@@ -2,7 +2,7 @@
 
 拡張編集の設定ダイアログへのデータ入力・調整・操作方法を拡充するプラグインです．
 
-[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_reactive_dlg/releases)
+[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_reactive_dlg/releases) [紹介動画．](https://www.nicovideo.jp/watch/sm43602590)
 
 ## 機能紹介
 
