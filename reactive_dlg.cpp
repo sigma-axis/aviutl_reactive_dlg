@@ -993,16 +993,6 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 		break;
 
 	case WM_CHAR:
-	case WM_IME_COMPOSITION:
-		if (settings.textTweaks.hide_cursor && !TextBox::hide_cursor.is_hidden()) {
-			// hide the cursor on keyboard inputs.
-			POINT pt;
-			::GetCursorPos(&pt);
-			::ScreenToClient(hwnd, &pt);
-			TextBox::hide_cursor.on_edit(pt);
-		}
-		if (message != WM_CHAR) break;
-
 		// replace a TAB with white spaces.
 		if (auto* wstr = replace_tab(static_cast<wchar_t>(wparam), hwnd); wstr != nullptr) {
 			if (wstr->length() != 1) {
@@ -1015,37 +1005,62 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 		}
 		break;
 
-	case WM_SETCURSOR:
-		// hide the cursor if specified.
-		if (settings.textTweaks.hide_cursor && TextBox::hide_cursor.is_hidden()) {
-			::SetCursor(nullptr);
-			return FALSE; // prioritize the parent window's choice of the cursor shape.
-		}
-		break;
-	case WM_LBUTTONDOWN:
-	case WM_RBUTTONDOWN:
-	case WM_MBUTTONDOWN:
-	case WM_XBUTTONDOWN:
-	case WM_LBUTTONUP:
-	case WM_RBUTTONUP:
-	case WM_MBUTTONUP:
-	case WM_XBUTTONUP:
-		// show again the mouse cursor on clicks.
-		if (settings.textTweaks.hide_cursor && TextBox::hide_cursor.is_hidden()) {
-			TextBox::hide_cursor.reset();
-			// since this click initiates dragging, WM_SETCURSOR won't be sent automatically.
-			::SendMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (message << 16));
-		}
-		break;
-	case WM_MOUSEMOVE:
-		// show again the mouse cursor on move.
-		if (settings.textTweaks.hide_cursor)
-			TextBox::hide_cursor.on_move({ .x = static_cast<int16_t>(lparam & 0xffff), .y = static_cast<int16_t>(lparam >> 16) });
-		break;
 	case WM_KILLFOCUS:
 		::RemoveWindowSubclass(hwnd, text_box_hook, id);
-		if (settings.textTweaks.hide_cursor) TextBox::hide_cursor.reset();
 		break;
+	}
+
+	if (settings.textTweaks.hide_cursor) {
+		switch (message) {
+		case WM_SETCURSOR:
+			// hide the cursor if specified.
+			if (settings.textTweaks.hide_cursor && TextBox::hide_cursor.is_hidden()) {
+				::SetCursor(nullptr);
+				return FALSE; // prioritize the parent window's choice of the cursor shape.
+			}
+			break;
+
+		case WM_CHAR:
+		case WM_IME_COMPOSITION:
+			if (!TextBox::hide_cursor.is_hidden()) {
+				// hide the cursor on keyboard inputs.
+				POINT pt;
+				::GetCursorPos(&pt);
+				::ScreenToClient(hwnd, &pt);
+				TextBox::hide_cursor.on_edit(pt);
+				if (pt.x >= 0 && pt.y >= 0) {
+					RECT rc;
+					::GetClientRect(hwnd, &rc);
+					if (pt.x < rc.right && pt.y < rc.bottom)
+						::SendMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (message << 16));
+				}
+			}
+			break;
+
+		case WM_LBUTTONDOWN:
+		case WM_RBUTTONDOWN:
+		case WM_MBUTTONDOWN:
+		case WM_XBUTTONDOWN:
+		case WM_KILLFOCUS:
+			// show again the mouse cursor on clicks and losing focus.
+			TextBox::hide_cursor.reset();
+			::SendMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), HTCLIENT | (message << 16));
+			break;
+
+		case WM_LBUTTONUP:
+		case WM_RBUTTONUP:
+		case WM_MBUTTONUP:
+		case WM_XBUTTONUP:
+			// show again the mouse cursor on buttons up too.
+			TextBox::hide_cursor.reset();
+			break;
+
+		case WM_MOUSEMOVE:
+			// show again the mouse cursor on move.
+			TextBox::hide_cursor.on_move({ .x = static_cast<int16_t>(lparam & 0xffff), .y = static_cast<int16_t>(lparam >> 16) });
+			break;
+		}
+
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
 }
@@ -1394,7 +1409,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.21"
+#define PLUGIN_VERSION	"v1.22-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
