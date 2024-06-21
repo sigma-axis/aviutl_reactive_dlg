@@ -12,6 +12,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 
 #include <cstdint>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <memory>
@@ -238,7 +239,7 @@ public:
 	}
 
 	// テキスト入力の画面反映処理を一括する機能．
-	inline static constinit struct {
+	static inline constinit struct {
 		void operator()()
 		{
 			// ignore unexpected calls.
@@ -461,7 +462,7 @@ public:
 		// get the caret position, relative to the end of the text.
 		auto caret = len - get_edit_selection(info->hwnd_label).first;
 		if (prec > 1) {
-			int dec_places = prec < 100 ? 1 : 2;
+			int dec_places = static_cast<int>(0.5 + std::log10(prec));
 
 			// values have fraction part.
 			// preserve the caret position relative to the decimal point.
@@ -469,9 +470,7 @@ public:
 				caret -= (text + len) - pt;
 			caret += 1 + dec_places;
 
-			// also, we need to prepare the formatting string according to the precision.
-			wchar_t fmt[] = L"%.0f"; fmt[2] = L'0' + dec_places;
-			len = std::swprintf(text, std::size(text), fmt, val);
+			len = std::swprintf(text, std::size(text), L"%.*f", dec_places, val);
 		}
 		else {
 			// values are integers.
@@ -1409,7 +1408,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.22"
+#define PLUGIN_VERSION	"v1.23-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
