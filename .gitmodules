@@ -1,3 +1,7 @@
 [submodule "sdk"]
 	path = sdk
 	url = https://github.com/sigma-axis/aviutl_exedit_sdk.git
+[submodule "detours"]
+	path = detours
+	url = https://github.com/microsoft/Detours.git
+	branch = 4.0.1

@@ -15,6 +15,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <cmath>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <memory>
 #include <bit>
 #include <concepts>
@@ -24,6 +25,9 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <Windows.h>
 #include <CommCtrl.h>
 #pragma comment(lib, "comctl32")
+
+#include "detours/include/detours.h"
+#pragma comment(lib, "detours/lib.x86/detours")
 
 using byte = uint8_t;
 #include <exedit.hpp>
@@ -105,6 +109,34 @@ inline constinit struct ExEdit092 {
 
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
 
+	ExEdit::Filter**	filter_table;		// 0x187c98
+	HWND*		filter_checkbox_table;		// 0x14d368
+	intptr_t*	exdata_table;				// 0x1e0fa8
+	char const*	animation_names;			// 0x0c1f08
+	void*		set_checkbox_text;			// 0x030380
+	void*		on_command;					// 0x04a050
+	// BOOL (CDECL* update_controls)(int32_t object_index); // 0x0305e0
+
+	intptr_t get_exdata(ExEdit::Object* object, int32_t filter_index) const
+	{
+		ptrdiff_t offset = object->exdata_offset + object->filter_param[filter_index].exdata_offset;
+		return (*exdata_table) + offset + 0x0004;
+	}
+	char const* get_animation_name(size_t animation_type) const {
+		static constinit std::vector<char const*> anim_names{};
+		if (anim_names.empty()) {
+			auto animation_name = animation_names;
+			while (animation_name[0] != '\0') {
+				anim_names.push_back(animation_name);
+				animation_name += std::strlen(animation_name) + 1;
+			}
+		}
+		if (animation_type < anim_names.size())
+			return anim_names[animation_type];
+		else
+			return "invalid_animation_type";
+	}
+
 private:
 	void init_pointers()
 	{
@@ -120,6 +152,14 @@ private:
 		pick_addr(trackinfo_right,			0x14def0);
 
 		//pick_addr(setting_dlg_wndproc,		0x02cde0);
+
+		pick_addr(filter_table,				0x187c98);
+		pick_addr(filter_checkbox_table,	0x14d368);
+		pick_addr(exdata_table,				0x1e0fa8);
+		pick_addr(animation_names,			0x0c1f08);
+		pick_addr(set_checkbox_text,		0x030380);
+		pick_addr(on_command,				0x04a050);
+		//pick_addr(update_controls,			0x0305e0);
 	}
 } exedit;
 
@@ -575,6 +615,151 @@ public:
 
 
 ////////////////////////////////
+// アニメーション効果の名前表示．
+////////////////////////////////
+struct DetourHelper {
+	static void Attach(auto&... args) {
+		::DetourTransactionBegin();
+		(args.attach(), ...);
+		::DetourTransactionCommit();
+	}
+	static void Detach(auto&... args) {
+		::DetourTransactionBegin();
+		(args.detach(), ...);
+		::DetourTransactionCommit();
+	}
+
+	void set_original(this auto& self, void* f) {
+		*reinterpret_cast<void**>(&self.original) = f;
+	}
+	void set_detour(this auto& self, void* f) {
+		*reinterpret_cast<void**>(&self.detour) = f;
+	}
+
+private:
+	void attach(this auto& self) {
+		if (self.is_effective())
+			::DetourAttach(reinterpret_cast<void**>(&self.original), self.detour);
+	}
+	void detach(this auto& self) {
+		if (self.is_effective())
+			::DetourDetach(reinterpret_cast<void**>(&self.original), self.detour);
+	}
+	bool is_effective(this const auto& self) {
+		return self.original != nullptr && self.detour != nullptr;
+	}
+};
+
+constinit struct : DetourHelper {
+	static BOOL CDECL detour(int32_t filter_index, int32_t y, char const* filter_name, uint32_t no_folding, uint32_t gui)
+	{
+		try {
+			if (strcmp(filter_name, "アニメーション効果"))
+				throw L"フィルタがアニメーション効果ではありません";
+
+			auto object_index = *exedit.SettingDialogObjectIndex;
+			if (object_index < 0) throw L"カレントオブジェクトが無効です";
+
+			auto object = (*exedit.ObjectArray_ptr) + object_index;
+			if (!object) throw L"オブジェクトが無効です";
+		#if 0
+			auto filter_id = object->filter_param[filter_index].id;
+			if (filter_id < 0) throw L"フィルタIDが無効です";
+
+			auto filter = (*exedit.filter_table) + filter_id;
+			if (!filter) throw L"フィルタが無効です";
+		#endif
+			auto exdata = exedit.get_exdata(object, filter_index);
+			if (!exdata) throw L"拡張データが無効です";
+
+			auto animation_type = *reinterpret_cast<uint16_t*>(exdata + 0x00);
+			//auto animation_filter = *reinterpret_cast<uint16_t*>(exdata + 0x02);
+			auto animation_name = reinterpret_cast<char const*>(exdata + 0x04);
+
+			if (!animation_name[0])
+				animation_name = exedit.get_animation_name(animation_type);
+
+			auto display_name = animation_name + std::string{ "(アニメーション効果)" };
+
+			return original(filter_index, y, display_name.c_str(), no_folding, gui);
+		}
+		catch (wchar_t const* e) {
+			(void)e;
+		}
+
+		return original(filter_index, y, filter_name, no_folding, gui);
+	}
+	static inline decltype(&detour) original = nullptr;
+
+	void init() {
+		original = reinterpret_cast<decltype(original)>(exedit.set_checkbox_text);
+	}
+} set_checkbox_text;
+
+constinit struct : DetourHelper {
+	static BOOL CDECL detour(int32_t object_index, int32_t filter_index, uint32_t command_id, uint32_t command_arg)
+	{
+		try {
+			if (LOWORD(command_id) != 0x1e1c)
+				throw L"コンボボックスコマンドではありません";
+
+			if (object_index < 0) throw L"オブジェクトインデックスが無効です";
+
+			auto object = (*exedit.ObjectArray_ptr) + object_index;
+			if (!object) throw L"オブジェクトが無効です";
+
+			if (filter_index < 0) throw L"フィルタインデックスが無効です";
+
+			auto filter_id = object->filter_param[filter_index].id;
+			if (filter_id < 0) throw L"フィルタIDが無効です";
+
+			auto filter = exedit.filter_table[filter_id];
+			if (!filter) throw L"フィルタが無効です";
+
+			if (!filter->name || strcmp(filter->name, "アニメーション効果"))
+				throw L"フィルタがアニメーション効果ではありません";
+
+			auto result = original(object_index, filter_index, command_id, command_arg);
+		#if 1
+			// チェックボックスの行だけを更新します。
+			// 
+			// チェックボックスのウィンドウ位置を取得します。
+			auto checkbox = exedit.filter_checkbox_table[filter_index];
+			auto rc = RECT{}; ::GetWindowRect(checkbox, &rc);
+			::ScreenToClient(::GetParent(checkbox), reinterpret_cast<POINT*>(&rc));
+			auto y = rc.top + 5;
+
+			uint32_t no_folding = 0x04;
+			if (!!(object->filter_status[filter_index] & ExEdit::Object::FilterStatus::Folding))
+				no_folding = 0x00;
+
+			uint32_t gui = 0x00;
+			if (!!(object->filter_status[filter_index] & ExEdit::Object::FilterStatus::Gui))
+				gui = 0x04;
+
+			set_checkbox_text.detour(filter_index, y, filter->name, no_folding, gui);
+		#else
+			// この更新方法のほうが簡潔ですが、設定ダイアログの再描画量が多くなって重くなってしまいます。
+			exedit.update_controls(object_index);
+		#endif
+			return result;
+		}
+		catch (wchar_t const* e) {
+			(void)e;
+		}
+
+		return original(object_index, filter_index, command_id, command_arg);
+	}
+	static inline decltype(&detour) original = nullptr;
+
+	void init() {
+		original = reinterpret_cast<decltype(original)>(exedit.on_command);
+	}
+} on_command;
+
+
+
+////////////////////////////////
 // 設定項目．
 ////////////////////////////////
 inline constinit struct Settings {
@@ -678,6 +863,10 @@ inline constinit struct Settings {
 		bool search;
 	} dropdownKbd{ true };
 
+	struct {
+		bool animation_effect;
+	} filterName{ true };
+
 	constexpr bool is_enabled() const
 	{
 		return textFocus.is_enabled() || textTweaks.is_enabled() ||
@@ -752,6 +941,8 @@ inline constinit struct Settings {
 			[](auto x) { return std::clamp(x, modkey_set::min_rate_boost, modkey_set::max_rate_boost); }, /* id */);
 
 		load_bool(dropdownKbd., search,			"Dropdown.Keyboard");
+
+		load_bool(filterName., animation_effect,"FilterName");
 
 #undef load_str
 #undef load_key
@@ -1310,6 +1501,8 @@ BOOL func_init(FilterPlugin* fp)
 			fp->name, MB_OK | MB_ICONEXCLAMATION);
 		return FALSE;
 	}
+	set_checkbox_text.init();
+	on_command.init();
 
 	// message-only window を作成，登録．これで NoConfig でも AviUtl からメッセージを受け取れる.
 	fp->hwnd = ::CreateWindowExW(0, L"AviUtl", L"", 0, 0, 0, 0, 0,
@@ -1356,12 +1549,16 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 					KeyboardHook::set();
 			}
 		}
+		if (settings.filterName.animation_effect)
+			DetourHelper::Attach(set_checkbox_text, on_command);
 		break;
 	case Message::Exit:
 		// at this moment, the setting dialog is already destroyed.
 		TextBox::batch.discard(hwnd, PrvMsg::NotifyUpdate);
 		KeyboardHook::unhook();
 		TrackLabel::cursor.free();
+		if (settings.filterName.animation_effect)
+			DetourHelper::Detach(set_checkbox_text, on_command);
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
@@ -1408,7 +1605,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.23"
+#define PLUGIN_VERSION	"v1.30-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
