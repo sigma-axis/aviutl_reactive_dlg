@@ -125,11 +125,8 @@ inline constinit struct ExEdit092 {
 	char const* get_animation_name(size_t animation_type) const {
 		static constinit std::vector<char const*> anim_names{};
 		if (anim_names.empty()) {
-			auto animation_name = animation_names;
-			while (animation_name[0] != '\0') {
-				anim_names.push_back(animation_name);
-				animation_name += std::strlen(animation_name) + 1;
-			}
+			for (auto name = animation_names; name[0] != '\0'; name += std::strlen(name) + 1)
+				anim_names.push_back(name);
 		}
 		if (animation_type < anim_names.size())
 			return anim_names[animation_type];
@@ -1524,6 +1521,14 @@ BOOL func_init(FilterPlugin* fp)
 			fp->name, MB_OK | MB_ICONEXCLAMATION);
 	}
 
+	if (settings.filterName.animation_effect && ::GetModuleHandleW(L"filter_name.auf") != nullptr) {
+		settings.filterName.animation_effect = false;
+		::MessageBoxA(fp->hwnd, "filter_name.auf と競合しているため一部機能を無効化しました．\n"
+			"次回以降このメッセージを表示させないためには，設定ファイルで以下の設定をしてください:\n\n"
+			"[FilterName]\nanimation_effect=0",
+			fp->name, MB_OK | MB_ICONEXCLAMATION);
+	}
+
 	return TRUE;
 }
 
@@ -1605,7 +1610,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.30"
+#define PLUGIN_VERSION	"v1.31-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
