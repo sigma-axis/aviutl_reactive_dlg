@@ -892,12 +892,12 @@ inline constinit struct Settings {
 				return std::unique_ptr<std::wstring>{ nullptr };
 			return std::make_unique<std::wstring>(Encodes::to_wstring(str));
 		};
-#define load_gen(head, tgt, section, read, write)	head##tgt = read##(read_raw(write##(head##tgt), section, #tgt))
-#define load_int(head, tgt, section)	load_gen(head, tgt, section, /* id */, /* id */)
-#define load_bool(head, tgt, section)	load_gen(head, tgt, section, \
-			[](auto y) { return y != 0; }, [](auto x) { return x ? 1 : 0; })
-#define load_key(head, tgt, section)	head##tgt = read_modkey(head##tgt, section, #tgt)
-#define load_str(head, tgt, section, def, max)	head##tgt = read_string.operator()<max>(def, section, #tgt)
+	#define load_gen(head, tgt, section, read, write)	head##tgt = read##(read_raw(write##(head##tgt), section, #tgt))
+	#define load_int(head, tgt, section)	load_gen(head, tgt, section, /* id */, /* id */)
+	#define load_bool(head, tgt, section)	load_gen(head, tgt, section, \
+				[](auto y) { return y != 0; }, [](auto x) { return x ? 1 : 0; })
+	#define load_key(head, tgt, section)	head##tgt = read_modkey(head##tgt, section, #tgt)
+	#define load_str(head, tgt, section, def, max)	head##tgt = read_string.operator()<max>(def, section, #tgt)
 
 		load_int (textFocus., forward.vkey,		"TextBox.Focus");
 		load_key (textFocus., forward.mkeys,	"TextBox.Focus");
@@ -944,11 +944,11 @@ inline constinit struct Settings {
 
 		load_bool(filterName., animation_effect,"FilterName");
 
-#undef load_str
-#undef load_key
-#undef load_bool
-#undef load_int
-#undef load_gen
+	#undef load_str
+	#undef load_key
+	#undef load_bool
+	#undef load_int
+	#undef load_gen
 	}
 } settings;
 
@@ -1391,7 +1391,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 			*exedit.SettingDialogObjectIndex >= 0) {
 			// check if it's from an UpDown control.
 			auto* header = reinterpret_cast<NMHDR*>(lparam);
-#pragma warning(suppress: 26454) // overflow warning by the macro UDN_DELTAPOS.
+		#pragma warning(suppress: 26454) // overflow warning by the macro UDN_DELTAPOS.
 			if (header == nullptr || header->code != UDN_DELTAPOS ||
 				header->hwndFrom == nullptr ||
 				!check_window_class(header->hwndFrom, UPDOWN_CLASSW)) break;
