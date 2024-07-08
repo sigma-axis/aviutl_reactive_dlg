@@ -106,6 +106,8 @@ inline constinit struct ExEdit092 {
 	HWND*		hwnd_edit_script;			// 0x230C78
 	TrackInfo*	trackinfo_left;				// 0x14d4c8
 	TrackInfo*	trackinfo_right;			// 0x14def0
+	int32_t*	track_label_dragging;		// 0x158d30
+	int32_t*	track_label_drag_x;			// 0x179218
 
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
 
@@ -147,6 +149,8 @@ private:
 		pick_addr(hwnd_edit_script,			0x230C78);
 		pick_addr(trackinfo_left,			0x14d4c8);
 		pick_addr(trackinfo_right,			0x14def0);
+		pick_addr(track_label_dragging,		0x158d30);
+		pick_addr(track_label_drag_x,		0x179218);
 
 		//pick_addr(setting_dlg_wndproc,		0x02cde0);
 
@@ -469,9 +473,11 @@ private:
 	static inline constinit wchar_t last_text[15] = L"";
 
 public:
+	static inline POINT mouse_pos_on_focused{};
 	static const TrackInfo& curr_info() { return *info; }
 	static void on_setfocus(const TrackInfo* track_info)
 	{
+		::GetCursorPos(&mouse_pos_on_focused);
 		info = track_info;
 		::GetWindowTextW(track_info->hwnd_label, last_text, std::size(last_text));
 	}
@@ -827,9 +833,9 @@ inline constinit struct Settings {
 	};
 
 	struct : modkey_set {
-		bool wheel, reverse_wheel, cursor_react;
+		bool wheel, reverse_wheel, cursor_react, fixed_drag;
 		modkeys keys_activate;
-		constexpr bool is_enabled() const { return wheel; }
+		constexpr bool is_enabled() const { return wheel || fixed_drag; }
 		constexpr bool is_activated(modkeys keys) const
 		{
 			return keys >= keys_activate && no_wrong_keys(keys);
@@ -842,7 +848,7 @@ inline constinit struct Settings {
 		}
 	} trackMouse{
 		{ modkeys::shift, modkeys::alt, false, 10, },
-		true, false, true, modkeys::ctrl,
+		true, false, true, false, modkeys::ctrl,
 	};
 
 	struct : modkey_set {
@@ -923,6 +929,7 @@ inline constinit struct Settings {
 		load_bool(trackMouse., wheel,			"Track.Mouse");
 		load_bool(trackMouse., reverse_wheel,	"Track.Mouse");
 		load_bool(trackMouse., cursor_react,	"Track.Mouse");
+		load_bool(trackMouse., fixed_drag,		"Track.Mouse");
 		load_key (trackMouse., keys_activate,	"Track.Mouse");
 		load_key (trackMouse., keys_decimal,	"Track.Mouse");
 		load_key (trackMouse., keys_boost,		"Track.Mouse");
@@ -1269,6 +1276,16 @@ LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 			return 0;
 		}
 		break;
+	case WM_MOUSEMOVE:
+		if (settings.trackMouse.fixed_drag &&
+			*exedit.track_label_dragging != 0 && ::GetCapture() == hwnd) {
+			POINT pt; ::GetCursorPos(&pt);
+			if (pt.x != TrackLabel::mouse_pos_on_focused.x || pt.y != TrackLabel::mouse_pos_on_focused.y) {
+				::SetCursorPos(TrackLabel::mouse_pos_on_focused.x, TrackLabel::mouse_pos_on_focused.y);
+				*exedit.track_label_drag_x -= pt.x - TrackLabel::mouse_pos_on_focused.x;
+			}
+		}
+		break;
 	case WM_KILLFOCUS:
 		TrackLabel::on_killfocus();
 		::RemoveWindowSubclass(hwnd, track_label_hook, id);
@@ -1292,7 +1309,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 					::SetWindowSubclass(ctrl, text_box_hook, TextBox::hook_uid(), 0);
 
 				else if (const TrackInfo* info;
-					settings.trackKbd.is_enabled() &&
+					(settings.trackKbd.is_enabled() || settings.trackMouse.fixed_drag) &&
 					(info = TrackLabel::find_trackinfo(wparam & 0xffff, ctrl)) != nullptr) {
 					// hook for manipulating values by arrow keys.
 					TrackLabel::on_setfocus(info);
@@ -1610,7 +1627,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.31"
+#define PLUGIN_VERSION	"v1.40-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
