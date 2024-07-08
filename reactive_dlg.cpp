@@ -106,8 +106,8 @@ inline constinit struct ExEdit092 {
 	HWND*		hwnd_edit_script;			// 0x230C78
 	TrackInfo*	trackinfo_left;				// 0x14d4c8
 	TrackInfo*	trackinfo_right;			// 0x14def0
-	int32_t*	track_label_dragging;		// 0x158d30
-	int32_t*	track_label_drag_x;			// 0x179218
+	int32_t*	track_label_is_dragging;	// 0x158d30
+	int32_t*	track_label_start_drag_x;	// 0x179218
 
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
 
@@ -149,8 +149,8 @@ private:
 		pick_addr(hwnd_edit_script,			0x230C78);
 		pick_addr(trackinfo_left,			0x14d4c8);
 		pick_addr(trackinfo_right,			0x14def0);
-		pick_addr(track_label_dragging,		0x158d30);
-		pick_addr(track_label_drag_x,		0x179218);
+		pick_addr(track_label_is_dragging,	0x158d30);
+		pick_addr(track_label_start_drag_x,	0x179218);
 
 		//pick_addr(setting_dlg_wndproc,		0x02cde0);
 
@@ -1278,12 +1278,18 @@ LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 		break;
 	case WM_MOUSEMOVE:
 		if (settings.trackMouse.fixed_drag &&
-			*exedit.track_label_dragging != 0 && ::GetCapture() == hwnd) {
+			*exedit.track_label_is_dragging != 0 && ::GetCapture() == hwnd) {
 			POINT pt; ::GetCursorPos(&pt);
 			if (pt.x != TrackLabel::mouse_pos_on_focused.x || pt.y != TrackLabel::mouse_pos_on_focused.y) {
+				// rewind the cursor position.
 				::SetCursorPos(TrackLabel::mouse_pos_on_focused.x, TrackLabel::mouse_pos_on_focused.y);
-				*exedit.track_label_drag_x -= pt.x - TrackLabel::mouse_pos_on_focused.x;
+
+				// "fake" the starting point of the drag.
+				*exedit.track_label_start_drag_x -= pt.x - TrackLabel::mouse_pos_on_focused.x;
 			}
+
+			// hide the cursor.
+			::SetCursor(nullptr);
 		}
 		break;
 	case WM_KILLFOCUS:
@@ -1382,6 +1388,10 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 	case WM_SETCURSOR:
 		if (settings.trackMouse.wheel && settings.trackMouse.cursor_react &&
 			*exedit.SettingDialogObjectIndex >= 0) {
+			// check if it's not in a dragging state.
+			if (*exedit.track_label_is_dragging != 0 && ::GetCapture() != nullptr)
+				return TRUE;
+
 			// check for the activation key.
 			if (!settings.trackMouse.is_activated(curr_modkeys()) ||
 				key_pressed_any(VK_LWIN, VK_RWIN)) break;
@@ -1627,7 +1637,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.40"
+#define PLUGIN_VERSION	"v1.41-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
