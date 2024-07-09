@@ -1378,7 +1378,9 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 			::ScreenToClient(hwnd, &pt);
 
 			// if the track is found, make an attempt to move the value.
-			if (auto* info = TrackLabel::find_trackinfo(pt); info != nullptr &&
+			if (auto* info = (TrackLabel::is_focused() && *exedit.track_label_is_dragging != 0 && ::GetCapture() != nullptr) ?
+				&TrackLabel::curr_info() : TrackLabel::find_trackinfo(pt);
+				info != nullptr &&
 				wheel_on_track(*info, static_cast<int16_t>(wparam >> 16), keys))
 				return 0; // successfully moved the value.
 
@@ -1637,7 +1639,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.41"
+#define PLUGIN_VERSION	"v1.42-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
