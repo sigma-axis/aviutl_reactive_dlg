@@ -16,6 +16,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <cstring>
 #include <string>
 #include <vector>
+#include <map>
 #include <memory>
 #include <bit>
 #include <concepts>
@@ -26,9 +27,6 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <CommCtrl.h>
 #pragma comment(lib, "comctl32")
 
-#include "detours/include/detours.h"
-#pragma comment(lib, "detours/lib.x86/detours")
-
 using byte = uint8_t;
 #include <exedit.hpp>
 
@@ -36,6 +34,7 @@ using namespace AviUtl;
 using namespace ExEdit;
 
 #include "modkeys.hpp"
+#include "slim_formatter.hpp"
 
 ////////////////////////////////
 // 主要情報源の変数アドレス．
@@ -111,30 +110,10 @@ inline constinit struct ExEdit092 {
 
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
 
-	ExEdit::Filter**	filter_table;		// 0x187c98
-	HWND*		filter_checkbox_table;		// 0x14d368
+	HWND*		filter_checkboxes;			// 0x14d368
+	HWND*		filter_separators;			// 0x1790d8
 	intptr_t*	exdata_table;				// 0x1e0fa8
-	char const*	animation_names;			// 0x0c1f08
-	void*		set_checkbox_text;			// 0x030380
-	void*		on_command;					// 0x04a050
-	// BOOL (CDECL* update_controls)(int32_t object_index); // 0x0305e0
-
-	intptr_t get_exdata(ExEdit::Object* object, int32_t filter_index) const
-	{
-		ptrdiff_t offset = object->exdata_offset + object->filter_param[filter_index].exdata_offset;
-		return (*exdata_table) + offset + 0x0004;
-	}
-	char const* get_animation_name(size_t animation_type) const {
-		static constinit std::vector<char const*> anim_names{};
-		if (anim_names.empty()) {
-			for (auto name = animation_names; name[0] != '\0'; name += std::strlen(name) + 1)
-				anim_names.push_back(name);
-		}
-		if (animation_type < anim_names.size())
-			return anim_names[animation_type];
-		else
-			return "invalid_animation_type";
-	}
+	char const*	basic_animation_names;		// 0x0c1f08
 
 private:
 	void init_pointers()
@@ -154,15 +133,24 @@ private:
 
 		//pick_addr(setting_dlg_wndproc,		0x02cde0);
 
-		pick_addr(filter_table,				0x187c98);
-		pick_addr(filter_checkbox_table,	0x14d368);
+		pick_addr(filter_checkboxes,		0x14d368);
+		pick_addr(filter_separators,		0x1790d8);
 		pick_addr(exdata_table,				0x1e0fa8);
-		pick_addr(animation_names,			0x0c1f08);
-		pick_addr(set_checkbox_text,		0x030380);
-		pick_addr(on_command,				0x04a050);
-		//pick_addr(update_controls,			0x0305e0);
+		pick_addr(basic_animation_names,	0x0c1f08);
 	}
 } exedit;
+
+namespace filter_id
+{
+	enum id : int32_t {
+		draw_std = 0x0a, // 標準描画
+		draw_ext = 0x0b, // 拡張描画
+		play_std = 0x0c, // 標準再生
+		particle = 0x0d, // パーティクル出力
+
+		anim_eff = 0x4f, // アニメーション効果
+	};
+}
 
 
 ////////////////////////////////
@@ -199,23 +187,6 @@ inline void discard_message(HWND hwnd, UINT message) {
 	MSG msg;
 	while (::PeekMessageW(&msg, hwnd, message, message, PM_REMOVE));
 }
-
-
-////////////////////////////////
-// 文字エンコード変換．
-////////////////////////////////
-struct Encodes {
-	template<UINT codepage = CP_UTF8>
-	static std::wstring to_wstring(const std::string_view& src) {
-		if (src.length() == 0) return L"";
-
-		auto wlen = ::MultiByteToWideChar(codepage, 0, src.data(), src.length(), nullptr, 0);
-		std::wstring ret(wlen, L'\0');
-		::MultiByteToWideChar(codepage, 0, src.data(), src.length(), ret.data(), wlen);
-
-		return ret;
-	}
-};
 
 
 ////////////////////////////////
@@ -364,7 +335,7 @@ public:
 		bool left = id < id_label_right_base;
 		id -= left ? id_label_left_base : id_label_right_base;
 		if (id >= Object::MAX_TRACK) return { false, -1 };
-		return { left , id };
+		return { left , static_cast<int8_t>(id) };
 	}
 	static bool check_edit_box_style(HWND edit)
 	{
@@ -433,12 +404,7 @@ public:
 
 		// needs re-ordering the indices if the final filter is of the certain types.
 		switch (const auto& filter_last = obj.filter_param[obj.countFilters() - 1]; filter_last.id) {
-			enum id : decltype(filter_last.id) {
-				draw_std = 0x0a, // 標準描画
-				draw_ext = 0x0b, // 拡張描画
-				play_std = 0x0c, // 標準再生
-				particle = 0x0d, // パーティクル出力
-			};
+			using enum filter_id::id;
 		case draw_std:
 		case draw_ext:
 		case play_std:
@@ -620,146 +586,231 @@ public:
 ////////////////////////////////
 // アニメーション効果の名前表示．
 ////////////////////////////////
-struct DetourHelper {
-	static void Attach(auto&... args) {
-		::DetourTransactionBegin();
-		(args.attach(), ...);
-		::DetourTransactionCommit();
-	}
-	static void Detach(auto&... args) {
-		::DetourTransactionBegin();
-		(args.detach(), ...);
-		::DetourTransactionCommit();
-	}
-
-	void set_original(this auto& self, void* f) {
-		*reinterpret_cast<void**>(&self.original) = f;
-	}
-	void set_detour(this auto& self, void* f) {
-		*reinterpret_cast<void**>(&self.detour) = f;
-	}
-
+struct FilterName : SettingDlg {
 private:
-	void attach(this auto& self) {
-		if (self.is_effective())
-			::DetourAttach(reinterpret_cast<void**>(&self.original), self.detour);
+	// names of build-in animation effects.
+	static inline std::vector<char const*> basic_anim_names{};
+	static void init_basic_anim_names()
+	{
+		if (basic_anim_names.empty()) {
+			for (auto name = exedit.basic_animation_names;
+				name[0] != '\0'; name += std::strlen(name) + 1)
+				basic_anim_names.push_back(name);
+		}
 	}
-	void detach(this auto& self) {
-		if (self.is_effective())
-			::DetourDetach(reinterpret_cast<void**>(&self.original), self.detour);
+
+	// the exdata structure for animation effects.
+	using anim_exdata = ExEdit::Exdata::efAnimationEffect;
+	// retrieves the name of animation effects from exdata, including external scripts.
+	static char const* get_anim_name(anim_exdata& exdata) {
+		return exdata.name[0] != '\0' ? exdata.name :
+			(init_basic_anim_names(), basic_anim_names[exdata.type]);
 	}
-	bool is_effective(this const auto& self) {
-		return self.original != nullptr && self.detour != nullptr;
+
+	// exdata is only available for "mid-point-leading" objects.
+	static ExEdit::Object& leading_object(ExEdit::Object& obj) {
+		if (obj.index_midpt_leader < 0) return obj;
+		else return (*exedit.ObjectArray_ptr)[obj.index_midpt_leader];
+	}
+
+	// retrieves exdata for animation effects at the given index of the given object,
+	// or nullptr if it's not an animation effect.
+	static anim_exdata* get_anim_exdata(ExEdit::Object& obj, int32_t filter_index)
+	{
+		auto& leader = leading_object(obj);
+		auto& filter_param = leader.filter_param[filter_index];
+		if (!filter_param.is_valid() || filter_param.id != filter_id::anim_eff) return nullptr;
+
+		ptrdiff_t offset = leader.exdata_offset + filter_param.exdata_offset;
+		return reinterpret_cast<anim_exdata*>((*exedit.exdata_table) + offset + 0x0004);
+	}
+	// retrieves the name of animation effect at the given index of the selected object,
+	// or nullptr if it's not an animation effect.
+	static char const* find_anim_name(size_t filter_index)
+	{
+		if (!is_valid()) return nullptr;
+
+		auto idx = *exedit.SettingDialogObjectIndex;
+		if (idx < 0) return nullptr;
+
+		auto* exdata = get_anim_exdata((*exedit.ObjectArray_ptr)[idx], filter_index);
+		if (exdata == nullptr) return nullptr;
+
+		return get_anim_name(*exdata);
+	}
+
+	// structure for cached formatted names and its rendering size.
+	struct anim_name_cache {
+		std::wstring caption = L"";
+		int width = -1;	// width for the text only.
+
+		bool is_valid() const { return width >= 0; }
+		void init(HWND check_button, std::wstring const& text)
+		{
+			caption = text;
+
+			// calculate the size for the text.
+			RECT rc{};
+			HDC dc = ::GetDC(check_button);
+			auto old_font = ::SelectObject(dc, reinterpret_cast<HFONT>(
+				::SendMessageW(check_button, WM_GETFONT, 0, 0)));
+			::DrawTextW(dc, caption.c_str(), caption.size(), &rc, DT_CALCRECT);
+			::SelectObject(dc, old_font);
+			::ReleaseDC(check_button, dc);
+			width = rc.right;
+		}
+		int wd_button() const { return width + extra_button_wd; }
+
+		constexpr static int
+			extra_button_wd = 18,	// width for check button adds this size.
+			button_height = 14,
+			gap_between_sep = 5,	// the separator leaves this margin.
+			sep_height = 2;			// height for the separator.
+
+	};
+	static inline std::map<std::string, anim_name_cache> name_cache{};
+
+#ifndef _DEBUG
+	constinit // somehow it causes an error for debug build.
+#endif // _DEBUG
+		static inline slim_formatter format_anim_name;
+	// find or create a cached formatted names at the given filter index of the selected object.
+	static anim_name_cache* find_anim_name_cache(size_t filter_index)
+	{
+		auto name = find_anim_name(filter_index);
+		if (name == nullptr) return nullptr;
+
+		auto& cache = name_cache[name];
+		if (!cache.is_valid())
+			cache.init(exedit.filter_checkboxes[filter_index], format_anim_name(name));
+		return &cache;
+	}
+
+	// holding the current states of manipulation of the check buttons and the separators.
+	static inline struct hook_state {
+		enum State : uint32_t {
+			idle,
+			renew,	// the filter itself is changing.
+			manip,	// manipulating intentionally with this dll.
+		} state = idle;
+
+		anim_name_cache const* candidate = nullptr;
+	} hook_states[ExEdit::Object::MAX_FILTER]{};
+
+	// adjusts positions and sizes of the check button and the separator.
+	// `hook_states[filter_index].state` must be set to `manip` before this call.
+	static void adjust_layout(size_t filter_index)
+	{
+		auto cache = hook_states[filter_index].candidate;
+		if (cache == nullptr) return; // won't occur.
+
+		HWND const
+			sep = exedit.filter_separators[filter_index],
+			btn = exedit.filter_checkboxes[filter_index];
+
+		// find the positions of the check button and the separator.
+		RECT rc; ::GetWindowRect(sep, &rc);
+		POINT sep_tl{ rc.left, rc.top }; ::ScreenToClient(get_hwnd(), &sep_tl);
+		::GetWindowRect(btn, &rc);
+		POINT btn_br{ rc.right, rc.bottom }; ::ScreenToClient(get_hwnd(), &btn_br);
+
+		// adjust their sizes according to the precalculated width.
+		::MoveWindow(btn, btn_br.x - cache->wd_button(), btn_br.y - cache->button_height,
+			cache->wd_button(), cache->button_height, TRUE);
+		::MoveWindow(sep, sep_tl.x, sep_tl.y,
+			std::max<int>(btn_br.x - cache->wd_button() - cache->gap_between_sep - sep_tl.x, 0),
+			cache->sep_height, TRUE);
+	}
+
+public:
+	// should be called on WM_SETTEXT of the check button,
+	// and replace lparam with the returned value if it's not nullptr.
+	static wchar_t const* on_set_text(size_t filter_index)
+	{
+		// current state must be `idle`.
+		auto& state = hook_states[filter_index];
+		if (state.state != hook_state::idle) return nullptr;
+
+		// it should be an animation effect.
+		auto* cache = find_anim_name_cache(filter_index);
+		if (cache == nullptr) return nullptr;
+
+		// then prepare the hook for the next call of WM_SIZE to the separator.
+		state.state = hook_state::renew;
+		state.candidate = cache;
+
+		// return the tweaked caption.
+		return cache->caption.c_str();
+	}
+	// should be called on WM_SIZE of the separator.
+	static void on_sep_resized(size_t filter_index)
+	{
+		auto& state = hook_states[filter_index];
+		if (state.state == hook_state::renew && state.candidate != nullptr) {
+			state.state = hook_state::manip;
+			adjust_layout(filter_index);
+		}
+		state.state = hook_state::idle;
+	}
+
+	// returns the index of the filter that handles the specified combo box,
+	// which might be the one that selects animation types.
+	static size_t idx_filter_from_combo_id(int id_combo)
+	{
+		constexpr size_t invalid_return = std::numeric_limits<size_t>::max();
+
+		// the setting dialog must be alive.
+		if (!is_valid()) return invalid_return;
+
+		// an object must be selected.
+		auto const idx_obj = *exedit.SettingDialogObjectIndex;
+		if (idx_obj < 0) return invalid_return;
+
+		auto const& filter_param = (*exedit.ObjectArray_ptr)[idx_obj].filter_param;
+
+		// find the index of checks.
+		constexpr int id_combo_base = 8100;
+		int const idx_combo = id_combo - id_combo_base;
+		if (idx_combo < 0 || idx_combo >= ExEdit::Object::MAX_CHECK) return invalid_return;
+
+		// traverse the filter to find the index.
+		size_t idx_filter; bool was_anim = false;
+		for (idx_filter = 0; idx_filter < std::size(filter_param); idx_filter++) {
+			auto const& filter = filter_param[idx_filter];
+			if (!filter.is_valid() || idx_combo < filter.check_begin) break;
+			was_anim = filter.id == filter_id::anim_eff;
+		}
+		return was_anim ? idx_filter - 1 : invalid_return;
+	}
+
+	// should be called when a combo box changed it's selection,
+	// after the default procedure was processed.
+	// makes updates to the filter names if necessary.
+	static void on_anim_type_changed(size_t filter_index)
+	{
+		// the state must be `idle`
+		auto& state = hook_states[filter_index];
+		if (state.state != hook_state::idle) return;
+
+		// it must be an animation effect.
+		auto* cache = find_anim_name_cache(filter_index);
+		if (cache == nullptr) return;
+
+		// then update the filter name and adjust the layout.
+		state.state = hook_state::manip;
+
+		state.candidate = cache;
+		::SetWindowTextW(exedit.filter_checkboxes[filter_index], cache->caption.c_str());
+		adjust_layout(filter_index);
+
+		state.state = hook_state::idle;
+	}
+
+	// should be called to acquire the formatting string.
+	static void init(std::wstring const& name_format) {
+		format_anim_name.init(name_format);
 	}
 };
-
-constinit struct : DetourHelper {
-	static BOOL CDECL detour(int32_t filter_index, int32_t y, char const* filter_name, uint32_t no_folding, uint32_t gui)
-	{
-		try {
-			if (strcmp(filter_name, "アニメーション効果"))
-				throw L"フィルタがアニメーション効果ではありません";
-
-			auto object_index = *exedit.SettingDialogObjectIndex;
-			if (object_index < 0) throw L"カレントオブジェクトが無効です";
-
-			auto object = (*exedit.ObjectArray_ptr) + object_index;
-			if (!object) throw L"オブジェクトが無効です";
-		#if 0
-			auto filter_id = object->filter_param[filter_index].id;
-			if (filter_id < 0) throw L"フィルタIDが無効です";
-
-			auto filter = (*exedit.filter_table) + filter_id;
-			if (!filter) throw L"フィルタが無効です";
-		#endif
-			auto exdata = exedit.get_exdata(object, filter_index);
-			if (!exdata) throw L"拡張データが無効です";
-
-			auto animation_type = *reinterpret_cast<uint16_t*>(exdata + 0x00);
-			//auto animation_filter = *reinterpret_cast<uint16_t*>(exdata + 0x02);
-			auto animation_name = reinterpret_cast<char const*>(exdata + 0x04);
-
-			if (!animation_name[0])
-				animation_name = exedit.get_animation_name(animation_type);
-
-			auto display_name = animation_name + std::string{ "(アニメーション効果)" };
-
-			return original(filter_index, y, display_name.c_str(), no_folding, gui);
-		}
-		catch (wchar_t const* e) {
-			(void)e;
-		}
-
-		return original(filter_index, y, filter_name, no_folding, gui);
-	}
-	static inline decltype(&detour) original = nullptr;
-
-	void init() {
-		original = reinterpret_cast<decltype(original)>(exedit.set_checkbox_text);
-	}
-} set_checkbox_text;
-
-constinit struct : DetourHelper {
-	static BOOL CDECL detour(int32_t object_index, int32_t filter_index, uint32_t command_id, uint32_t command_arg)
-	{
-		try {
-			if (LOWORD(command_id) != 0x1e1c)
-				throw L"コンボボックスコマンドではありません";
-
-			if (object_index < 0) throw L"オブジェクトインデックスが無効です";
-
-			auto object = (*exedit.ObjectArray_ptr) + object_index;
-			if (!object) throw L"オブジェクトが無効です";
-
-			if (filter_index < 0) throw L"フィルタインデックスが無効です";
-
-			auto filter_id = object->filter_param[filter_index].id;
-			if (filter_id < 0) throw L"フィルタIDが無効です";
-
-			auto filter = exedit.filter_table[filter_id];
-			if (!filter) throw L"フィルタが無効です";
-
-			if (!filter->name || strcmp(filter->name, "アニメーション効果"))
-				throw L"フィルタがアニメーション効果ではありません";
-
-			auto result = original(object_index, filter_index, command_id, command_arg);
-		#if 1
-			// チェックボックスの行だけを更新します。
-			// 
-			// チェックボックスのウィンドウ位置を取得します。
-			auto checkbox = exedit.filter_checkbox_table[filter_index];
-			auto rc = RECT{}; ::GetWindowRect(checkbox, &rc);
-			::ScreenToClient(::GetParent(checkbox), reinterpret_cast<POINT*>(&rc));
-			auto y = rc.top + 5;
-
-			uint32_t no_folding = 0x04;
-			if (!!(object->filter_status[filter_index] & ExEdit::Object::FilterStatus::Folding))
-				no_folding = 0x00;
-
-			uint32_t gui = 0x00;
-			if (!!(object->filter_status[filter_index] & ExEdit::Object::FilterStatus::Gui))
-				gui = 0x04;
-
-			set_checkbox_text.detour(filter_index, y, filter->name, no_folding, gui);
-		#else
-			// この更新方法のほうが簡潔ですが、設定ダイアログの再描画量が多くなって重くなってしまいます。
-			exedit.update_controls(object_index);
-		#endif
-			return result;
-		}
-		catch (wchar_t const* e) {
-			(void)e;
-		}
-
-		return original(object_index, filter_index, command_id, command_arg);
-	}
-	static inline decltype(&detour) original = nullptr;
-
-	void init() {
-		original = reinterpret_cast<decltype(original)>(exedit.on_command);
-	}
-} on_command;
-
 
 
 ////////////////////////////////
@@ -867,14 +918,16 @@ inline constinit struct Settings {
 	} dropdownKbd{ true };
 
 	struct {
-		bool animation_effect;
-	} filterName{ true };
+		std::unique_ptr<std::wstring> anim_eff_fmt;
+		constexpr static size_t max_anim_eff_fmt_length = 256;
+		bool is_enabled() const { return static_cast<bool>(anim_eff_fmt); }
+	} filterName{ nullptr };
 
 	constexpr bool is_enabled() const
 	{
 		return textFocus.is_enabled() || textTweaks.is_enabled() ||
 			trackKbd.is_enabled() || trackMouse.is_enabled() || trackBtn.is_enabled() ||
-			dropdownKbd.search;
+			dropdownKbd.search || filterName.is_enabled();
 	}
 
 	void load(const char* ini_file)
@@ -888,10 +941,10 @@ inline constinit struct Settings {
 			::GetPrivateProfileStringA(section, key, def.canon_name(), str, std::size(str), ini_file);
 			return modkeys{ str, def };
 		};
-		auto read_string = [&]<size_t max_len>(const char* def, const char* section, const char* key) {
+		auto read_string = [&]<size_t max_len>(const char* def, const char* section, const char* key, const char* nil) {
 			char str[max_len + 1];
 			::GetPrivateProfileStringA(section, key, def, str, std::size(str), ini_file);
-			if (std::strcmp(str, def) == 0)
+			if (std::strcmp(str, nil) == 0)
 				return std::unique_ptr<std::wstring>{ nullptr };
 			return std::make_unique<std::wstring>(Encodes::to_wstring(str));
 		};
@@ -900,7 +953,8 @@ inline constinit struct Settings {
 	#define load_bool(head, tgt, section)	load_gen(head, tgt, section, \
 				[](auto y) { return y != 0; }, [](auto x) { return x ? 1 : 0; })
 	#define load_key(head, tgt, section)	head##tgt = read_modkey(head##tgt, section, #tgt)
-	#define load_str(head, tgt, section, def, max)	head##tgt = read_string.operator()<max>(def, section, #tgt)
+	#define load_str0(head, tgt, section, def, max, nil)	head##tgt = read_string.operator()<max>(def, section, #tgt, nil)
+	#define load_str(head, tgt, section, def, max)	load_str0(head, tgt, section, def, max, def)
 
 		load_int (textFocus., forward.vkey,		"TextBox.Focus");
 		load_key (textFocus., forward.mkeys,	"TextBox.Focus");
@@ -946,7 +1000,7 @@ inline constinit struct Settings {
 
 		load_bool(dropdownKbd., search,			"Dropdown.Keyboard");
 
-		load_bool(filterName., animation_effect,"FilterName");
+		load_str0(filterName., anim_eff_fmt,	"FilterName", "{}(アニメーション効果)", filterName.max_anim_eff_fmt_length, "");
 
 	#undef load_str
 	#undef load_key
@@ -1361,6 +1415,19 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 				if (settings.dropdownKbd.search && check_window_class(ctrl, WC_COMBOBOXW))
 					DropdownList::on_notify_close();
 				break;
+
+				// アニメーション効果の変更を監視．
+			case CBN_SELCHANGE:
+				if (settings.filterName.is_enabled() && check_window_class(ctrl, WC_COMBOBOXW)) {
+					if (auto idx = FilterName::idx_filter_from_combo_id(wparam & 0xffff);
+						idx < ExEdit::Object::MAX_FILTER) {
+
+						auto ret = ::DefSubclassProc(hwnd, message, wparam, lparam);
+						FilterName::on_anim_type_changed(idx);
+						return ret;
+					}
+				}
+				break;
 			}
 		}
 		break;
@@ -1468,6 +1535,38 @@ LRESULT CALLBACK trackbar_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
 }
 
+// アニメーション効果のスクリプト名表示．
+LRESULT CALLBACK filter_name_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto data)
+{
+	switch (message) {
+	case WM_SETTEXT:
+		// wparam: not used, lparam: reinterpret_cast<wchar_t const*>(lparam) is the new text.
+		if (size_t idx = static_cast<int>(data); idx < ExEdit::Object::MAX_FILTER) {
+			if (auto new_name = FilterName::on_set_text(idx); new_name != nullptr)
+				lparam = reinterpret_cast<LPARAM>(new_name);
+		}
+		break;
+	case WM_DESTROY:
+		::RemoveWindowSubclass(hwnd, trackbar_hook, id);
+		break;
+	}
+	return ::DefSubclassProc(hwnd, message, wparam, lparam);
+}
+// アニメーション効果のスクリプト名表示によるレイアウト変更．
+LRESULT CALLBACK filter_separator_hook(HWND hwnd, UINT message, WPARAM w, LPARAM l, auto id, auto data)
+{
+	switch (message) {
+	case WM_SIZE:
+		if (size_t idx = static_cast<int>(data); idx < ExEdit::Object::MAX_FILTER)
+			FilterName::on_sep_resized(idx);
+		break;
+	case WM_DESTROY:
+		::RemoveWindowSubclass(hwnd, filter_separator_hook, id);
+		break;
+	}
+	return ::DefSubclassProc(hwnd, message, w, l);
+}
+
 // カーソル切り替えのためのキーボード監視用フック．
 class KeyboardHook {
 	inline constinit static HHOOK handle = nullptr;
@@ -1527,8 +1626,6 @@ BOOL func_init(FilterPlugin* fp)
 			fp->name, MB_OK | MB_ICONEXCLAMATION);
 		return FALSE;
 	}
-	set_checkbox_text.init();
-	on_command.init();
 
 	// message-only window を作成，登録．これで NoConfig でも AviUtl からメッセージを受け取れる.
 	fp->hwnd = ::CreateWindowExW(0, L"AviUtl", L"", 0, 0, 0, 0, 0,
@@ -1550,8 +1647,8 @@ BOOL func_init(FilterPlugin* fp)
 			fp->name, MB_OK | MB_ICONEXCLAMATION);
 	}
 
-	if (settings.filterName.animation_effect && ::GetModuleHandleW(L"filter_name.auf") != nullptr) {
-		settings.filterName.animation_effect = false;
+	if (settings.filterName.is_enabled() && ::GetModuleHandleW(L"filter_name.auf") != nullptr) {
+		settings.filterName.anim_eff_fmt.reset();
 		::MessageBoxA(fp->hwnd, "filter_name.auf と競合しているため一部機能を無効化しました．\n"
 			"次回以降このメッセージを表示させないためには，設定ファイルで以下の設定をしてください:\n\n"
 			"[FilterName]\nanimation_effect=0",
@@ -1582,17 +1679,21 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 					settings.trackMouse.keys_activate.has_flags())
 					KeyboardHook::set();
 			}
+
+			if (settings.filterName.is_enabled()) {
+				FilterName::init(*settings.filterName.anim_eff_fmt);
+				for (size_t i = 0; i < ExEdit::Object::MAX_FILTER; i++) {
+					::SetWindowSubclass(exedit.filter_checkboxes[i], filter_name_hook, FilterName::hook_uid(), { i });
+					::SetWindowSubclass(exedit.filter_separators[i], filter_separator_hook, FilterName::hook_uid(), { i });
+				}
+			}
 		}
-		if (settings.filterName.animation_effect)
-			DetourHelper::Attach(set_checkbox_text, on_command);
 		break;
 	case Message::Exit:
 		// at this moment, the setting dialog is already destroyed.
 		TextBox::batch.discard(hwnd, PrvMsg::NotifyUpdate);
 		KeyboardHook::unhook();
 		TrackLabel::cursor.free();
-		if (settings.filterName.animation_effect)
-			DetourHelper::Detach(set_checkbox_text, on_command);
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
@@ -1639,7 +1740,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.42-beta1"
+#define PLUGIN_VERSION	"v1.42-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)

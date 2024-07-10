@@ -18,6 +18,9 @@
     <ClInclude Include="modkeys.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="slim_formatter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="reactive_dlg.cpp">

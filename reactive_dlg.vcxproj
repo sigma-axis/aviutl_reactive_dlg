@@ -63,6 +63,7 @@
       <AdditionalIncludeDirectories>sdk/;</AdditionalIncludeDirectories>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:shift_jis %(AdditionalOptions)</AdditionalOptions>
       <UseFullPaths>false</UseFullPaths>
+      <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -99,6 +100,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="modkeys.hpp" />
+    <ClInclude Include="slim_formatter.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="reactive_dlg.cpp" />
