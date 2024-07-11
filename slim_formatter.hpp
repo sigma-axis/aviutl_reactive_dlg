@@ -60,7 +60,7 @@ public:
 		base = fmt;
 		holes.clear();
 
-		// find the patern "{*}?" (e.g. "{}", "{{{}", "{{{{{"),
+		// find the patern "{+}?" (e.g. "{}", "{{{}", "{{{{{"),
 		// and modify it for future use.
 		size_t i = 0;
 		while ((i = base.find_first_of(L'{', i)) < base.size()) {

@@ -35,6 +35,7 @@ using namespace ExEdit;
 
 #include "modkeys.hpp"
 #include "slim_formatter.hpp"
+#include "memory_protect.hpp"
 
 ////////////////////////////////
 // 主要情報源の変数アドレス．
@@ -115,6 +116,8 @@ inline constinit struct ExEdit092 {
 	intptr_t*	exdata_table;				// 0x1e0fa8
 	char const*	basic_animation_names;		// 0x0c1f08
 
+	void*		call_GetKeyState_easing;	// 0x02ca87
+
 private:
 	void init_pointers()
 	{
@@ -137,6 +140,8 @@ private:
 		pick_addr(filter_separators,		0x1790d8);
 		pick_addr(exdata_table,				0x1e0fa8);
 		pick_addr(basic_animation_names,	0x0c1f08);
+
+		pick_addr(call_GetKeyState_easing,	0x02ca87);
 	}
 } exedit;
 
@@ -814,6 +819,14 @@ public:
 
 
 ////////////////////////////////
+// トラックバーの変化方法の調整．
+////////////////////////////////
+SHORT WINAPI inv_GetKeyState(int nVirtKey) {
+	return 0xff80 ^ ::GetKeyState(nVirtKey);
+}
+
+
+////////////////////////////////
 // 設定項目．
 ////////////////////////////////
 inline constinit struct Settings {
@@ -923,6 +936,10 @@ inline constinit struct Settings {
 		bool is_enabled() const { return static_cast<bool>(anim_eff_fmt); }
 	} filterName{ nullptr };
 
+	struct {
+		bool linked_track_invert_shift;
+	} easings{ false };
+
 	constexpr bool is_enabled() const
 	{
 		return textFocus.is_enabled() || textTweaks.is_enabled() ||
@@ -1001,6 +1018,8 @@ inline constinit struct Settings {
 		load_bool(dropdownKbd., search,			"Dropdown.Keyboard");
 
 		load_str0(filterName., anim_eff_fmt,	"FilterName", "{}(アニメーション効果)", filterName.max_anim_eff_fmt_length, "");
+
+		load_bool(easings., linked_track_invert_shift, "Easings");
 
 	#undef load_str
 	#undef load_key
@@ -1655,6 +1674,10 @@ BOOL func_init(FilterPlugin* fp)
 			fp->name, MB_OK | MB_ICONEXCLAMATION);
 	}
 
+	// トラックバーの変化方法の調整．
+	if (settings.easings.linked_track_invert_shift)
+		memory::hook_api_call(exedit.call_GetKeyState_easing, &inv_GetKeyState);
+
 	return TRUE;
 }
 
@@ -1740,7 +1763,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.42"
+#define PLUGIN_VERSION	"v1.50-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
