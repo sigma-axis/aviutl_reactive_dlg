@@ -19,8 +19,10 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-//---------------------------------------------------------------------
 
+////////////////////////////////
+// 実行コードなどの書き換え補助．
+////////////////////////////////
 namespace memory
 {
 	class ProtectHelper {
@@ -88,4 +90,3 @@ namespace memory
 	}
 }
 
-//---------------------------------------------------------------------
