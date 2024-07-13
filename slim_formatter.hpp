@@ -46,12 +46,23 @@ class slim_formatter {
 public:
 	constexpr std::wstring operator()(std::wstring const& name) const
 	{
-		std::wstring ret = base; // copy.
-		ret.reserve(ret.size() + name.size() * holes.size());
+		std::wstring ret(base.size() + name.size() * holes.size(), L'\0');
 
-		// insert the name into the 'holes'.
-		for (auto i : holes) ret.insert(i, name);
-		ret.shrink_to_fit();
+		// alternatingly copy to `ret` the strings `base` and `name`.
+		size_t l = 0; auto p = ret.data();
+		for (auto i : holes) {
+			base.copy(p, i - l, l);
+			p += i - l;
+
+			name.copy(p, name.size());
+			p += name.size();
+
+			l = i;
+		}
+
+		// and the final tail part.
+		base.copy(p, base.size() - l, l);
+
 		return ret;
 	}
 	constexpr std::wstring operator()(char const* name) const { return (*this)(Encodes::to_wstring<CP_ACP>(name)); }
@@ -83,7 +94,6 @@ public:
 			if (has_hole) holes.emplace_back(i);
 		}
 
-		std::reverse(holes.begin(), holes.end()); // holes are filled in the reversed order.
 		base.shrink_to_fit();
 		holes.shrink_to_fit();
 	}

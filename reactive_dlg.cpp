@@ -37,6 +37,7 @@ using namespace ExEdit;
 #include "slim_formatter.hpp"
 #include "memory_protect.hpp"
 
+
 ////////////////////////////////
 // 主要情報源の変数アドレス．
 ////////////////////////////////
@@ -863,7 +864,7 @@ private:
 			script_names.shrink_to_fit();
 		}
 	}
-	// built-in script names.
+	// built-in easing names.
 	constexpr static std::string_view const basic_track_mode_names[]{
 		"移動無し",
 		"直線移動",
@@ -909,23 +910,31 @@ private:
 			dec = (mode.num & mode.isDecelerate) != 0,
 			is_scr = basic_idx == mode.isScript;
 
+		// name of the easing.
 		std::string ret{ is_scr ?
 			script_names[mode.script_idx].name :
 			basic_track_mode_names[basic_idx] };
+
+		// identify its specification, especially whether it accepts a parameter.
 		easing_spec spec = is_scr ? easing_spec{ exedit.easing_specs_script[mode.script_idx] } :
 			easing_spec{ exedit.easing_specs_builtin[basic_idx] };
 		if (!spec.loaded) {
+			// script wasn't loaded yet. try after loading.
 			exedit.load_easing_spec(mode.script_idx, 0, 0);
 			spec = { exedit.easing_specs_script[mode.script_idx] };
 		}
+
+		// integral parameter.
 		if (spec.param)
 			ret += "\nパラメタ: " + std::to_string(param);
+
+		// two more booleans.
 		if (acc || dec) {
-			if (spec.param) ret += ", ";
-			else ret += "\n";
+			ret += spec.param ? ", " : "\n";
+			if (acc) ret += "+加速 ";
+			if (dec) ret += "+減速 ";
+			ret.pop_back();
 		}
-		if (acc) ret += "+加速 ";
-		if (dec) ret += "+減速 ";
 
 		return ret;
 	}
@@ -1006,19 +1015,20 @@ public:
 			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 		// associate the tooltip with each trackbar button.
+		TTTOOLINFOA ti{
+			.cbSize = sizeof(ti),
+			.uFlags = TTF_IDISHWND | TTF_TRANSPARENT,
+			.hinst = exedit.fp->hinst_parent,
+			.lpszText = LPSTR_TEXTCALLBACKA,
+		};
 		for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++) {
 			HWND tgt = exedit.hwnd_track_buttons[i];
 
+			ti.hwnd = tgt;
+			ti.uId = reinterpret_cast<uintptr_t>(tgt);
+
 			// note that the only A-variant can successfully register
-			// if dark-mode isn't applied.
-			TTTOOLINFOA ti{
-				.cbSize = sizeof(ti),
-				.uFlags = TTF_IDISHWND | TTF_TRANSPARENT,
-				.hwnd = tgt,
-				.uId = reinterpret_cast<uintptr_t>(tgt),
-				.hinst = exedit.fp->hinst_parent,
-				.lpszText = LPSTR_TEXTCALLBACKA,
-			};
+			// if dark-mode isn't applied (i.e. TTM_ADDTOOLW would fail otherwise).
 			::SendMessageW(tooltip, TTM_ADDTOOLA, 0, reinterpret_cast<LPARAM>(&ti));
 		}
 
@@ -2027,7 +2037,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.51-test2"
+#define PLUGIN_VERSION	"v1.60-beta3"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
