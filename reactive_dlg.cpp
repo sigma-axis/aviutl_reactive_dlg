@@ -117,8 +117,13 @@ inline constinit struct ExEdit092 {
 	intptr_t*	exdata_table;				// 0x1e0fa8
 	char const*	basic_animation_names;		// 0x0c1f08
 	char const* track_script_names;			// 0x0ca010
+	uint32_t*	easing_specs_builtin;		// 0x0b8390
+	uint8_t*	easing_specs_script;		// 0x231d90
 
 	void*		cmp_shift_state_easing;		// 0x02ca90+1
+
+	// index: index of the script; zero1, zero2: zero, unknown otherwise.
+	void(*load_easing_spec)(int32_t index, int32_t zero1, int32_t zero2); // 0x087940; 
 
 private:
 	void init_pointers()
@@ -144,8 +149,11 @@ private:
 		pick_addr(exdata_table,				0x1e0fa8);
 		pick_addr(basic_animation_names,	0x0c1f08);
 		pick_addr(track_script_names,		0x0ca010);
+		pick_addr(easing_specs_builtin,		0x0b8390);
+		pick_addr(easing_specs_script,		0x231d90);
 
 		pick_addr(cmp_shift_state_easing,	0x02ca90 + 1);
+		pick_addr(load_easing_spec,			0x087940);
 	}
 } exedit;
 
@@ -867,6 +875,25 @@ private:
 		"加減速移動",
 		"反復移動",
 	};
+	struct easing_spec {
+		bool speed, param, twopoints, loaded;
+		constexpr easing_spec(uint32_t val)
+			: speed		{ (val & flag_speed) != 0 }
+			, param		{ (val & flag_param) != 0 }
+			, twopoints	{ val >= 4 && val != 7 }
+			, loaded	{ true } {}
+		constexpr easing_spec(uint8_t val)
+			: speed		{ (val & flag_speed) != 0 }
+			, param		{ (val & flag_param) != 0 }
+			, twopoints	{ (val & flag_twopoints) != 0 }
+			, loaded	{ (val & flag_loaded) != 0 } {}
+
+		constexpr static uint8_t
+			flag_speed		= 1 << 0,
+			flag_param		= 1 << 1,
+			flag_twopoints	= 1 << 6,
+			flag_loaded		= 1 << 7;
+	};
 
 	// to store buffer for the tooltip text.
 #ifndef _DEBUG
@@ -885,10 +912,20 @@ private:
 		std::string ret{ is_scr ?
 			script_names[mode.script_idx].name :
 			basic_track_mode_names[basic_idx] };
-		ret += "\nパラメタ: " + std::to_string(param);
-		if (acc || dec) ret += ",";
-		if (acc) ret += " +加速";
-		if (dec) ret += " +減速";
+		easing_spec spec = is_scr ? easing_spec{ exedit.easing_specs_script[mode.script_idx] } :
+			easing_spec{ exedit.easing_specs_builtin[basic_idx] };
+		if (!spec.loaded) {
+			exedit.load_easing_spec(mode.script_idx, 0, 0);
+			spec = { exedit.easing_specs_script[mode.script_idx] };
+		}
+		if (spec.param)
+			ret += "\nパラメタ: " + std::to_string(param);
+		if (acc || dec) {
+			if (spec.param) ret += ", ";
+			else ret += "\n";
+		}
+		if (acc) ret += "+加速 ";
+		if (dec) ret += "+減速 ";
 
 		return ret;
 	}
@@ -923,10 +960,12 @@ public:
 				switch (hdr->code) {
 				case TTN_GETDISPINFOA:
 				{
+					// compose the tooltip string.
 					auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
 					auto const& mode = obj.track_mode[idx];
 					if (mode.num == 0) break; // 移動無し
 
+					// store the string and return it.
 					curr_tooltip_text = format_tooltip(mode, obj.track_param[idx]);
 					reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = curr_tooltip_text.data();
 					break;
@@ -934,6 +973,7 @@ public:
 
 				case NM_CUSTOMDRAW:
 				{
+					// change the text color if specified.
 					if (text_color < 0) break;
 
 					auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
@@ -953,7 +993,10 @@ public:
 	{
 		if (tooltip != nullptr) return;
 
+		// initialize the name table of easing scripts.
 		init_script_names();
+
+		// create the tooltip window.
 		tooltip = ::CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
 			WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP | (anim ? TTS_NOFADE | TTS_NOANIMATE : 0),
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
@@ -962,6 +1005,7 @@ public:
 		::SetWindowPos(tooltip, HWND_TOPMOST, 0, 0, 0, 0,
 			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
+		// associate the tooltip with each trackbar button.
 		for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++) {
 			HWND tgt = exedit.hwnd_track_buttons[i];
 
@@ -977,12 +1021,15 @@ public:
 			};
 			::SendMessageW(tooltip, TTM_ADDTOOLA, 0, reinterpret_cast<LPARAM>(&ti));
 		}
-		::SendMessageW(tooltip, TTM_SETMAXTIPWIDTH, 0, 640);
 
-		// initial values are... TTDT_INITIAL: 340, TTDT_AUTOPOP: 3400, TTDT_RESHOW: 68.
+		// required for multi-line tooltips.
+		::SendMessageW(tooltip, TTM_SETMAXTIPWIDTH, 0, (1 << 15) - 1);
+
+		// settings of delay time for the tooltip.
 		::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_INITIAL,	0xffff & delay);
 		::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_AUTOPOP,	0xffff & duration);
 		::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_RESHOW,	0xffff & (delay / 5));
+		// initial values are... TTDT_INITIAL: 340, TTDT_AUTOPOP: 3400, TTDT_RESHOW: 68.
 	}
 	static void term_tooltip()
 	{
@@ -1980,7 +2027,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.51-test1"
+#define PLUGIN_VERSION	"v1.51-test2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
