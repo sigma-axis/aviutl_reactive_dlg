@@ -106,7 +106,7 @@ inline constinit struct ExEdit092 {
 	HWND*		hwnd_edit_script;			// 0x230C78
 	TrackInfo*	trackinfo_left;				// 0x14d4c8
 	TrackInfo*	trackinfo_right;			// 0x14def0
-	int32_t*	track_label_is_dragging;	// 0x158d30
+	int32_t*	track_label_is_dragging;	// 0x158d30; 0: idle, 1: dragging.
 	int32_t*	track_label_start_drag_x;	// 0x179218
 
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
@@ -116,7 +116,7 @@ inline constinit struct ExEdit092 {
 	intptr_t*	exdata_table;				// 0x1e0fa8
 	char const*	basic_animation_names;		// 0x0c1f08
 
-	void*		call_GetKeyState_easing;	// 0x02ca87
+	void*		cmp_shift_state_easing;		// 0x02ca90+1
 
 private:
 	void init_pointers()
@@ -141,7 +141,7 @@ private:
 		pick_addr(exdata_table,				0x1e0fa8);
 		pick_addr(basic_animation_names,	0x0c1f08);
 
-		pick_addr(call_GetKeyState_easing,	0x02ca87);
+		pick_addr(cmp_shift_state_easing,	0x02ca90 + 1);
 	}
 } exedit;
 
@@ -1676,7 +1676,10 @@ BOOL func_init(FilterPlugin* fp)
 
 	// トラックバーの変化方法の調整．
 	if (settings.easings.linked_track_invert_shift)
-		memory::hook_api_call(exedit.call_GetKeyState_easing, &inv_GetKeyState);
+		// 0f 8c 87 00 00 00	jl
+		// V
+		// 0f 8d 87 00 00 00	jge
+		memory::ProtectHelper::write(exedit.cmp_shift_state_easing, byte{ 0x8d });
 
 	return TRUE;
 }
@@ -1763,7 +1766,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.50"
+#define PLUGIN_VERSION	"v1.51-test1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
