@@ -108,6 +108,7 @@ inline constinit struct ExEdit092 {
 	TrackInfo*	trackinfo_right;			// 0x14def0
 	int32_t*	track_label_is_dragging;	// 0x158d30; 0: idle, 1: dragging.
 	int32_t*	track_label_start_drag_x;	// 0x179218
+	HWND*		hwnd_track_buttons;			// 0x158f68
 
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
 
@@ -115,6 +116,7 @@ inline constinit struct ExEdit092 {
 	HWND*		filter_separators;			// 0x1790d8
 	intptr_t*	exdata_table;				// 0x1e0fa8
 	char const*	basic_animation_names;		// 0x0c1f08
+	char const* track_script_names;			// 0x0ca010
 
 	void*		cmp_shift_state_easing;		// 0x02ca90+1
 
@@ -133,6 +135,7 @@ private:
 		pick_addr(trackinfo_right,			0x14def0);
 		pick_addr(track_label_is_dragging,	0x158d30);
 		pick_addr(track_label_start_drag_x,	0x179218);
+		pick_addr(hwnd_track_buttons,		0x158f68);
 
 		//pick_addr(setting_dlg_wndproc,		0x02cde0);
 
@@ -140,6 +143,7 @@ private:
 		pick_addr(filter_separators,		0x1790d8);
 		pick_addr(exdata_table,				0x1e0fa8);
 		pick_addr(basic_animation_names,	0x0c1f08);
+		pick_addr(track_script_names,		0x0ca010);
 
 		pick_addr(cmp_shift_state_easing,	0x02ca90 + 1);
 	}
@@ -821,9 +825,173 @@ public:
 ////////////////////////////////
 // トラックバーの変化方法の調整．
 ////////////////////////////////
-SHORT WINAPI inv_GetKeyState(int nVirtKey) {
-	return 0xff80 ^ ::GetKeyState(nVirtKey);
-}
+struct Easings : SettingDlg {
+private:
+	// source of script names.
+	struct script_name {
+		std::string_view name, dir;
+		script_name(char const*& ptr) {
+			std::string_view raw{ ptr };
+			ptr += raw.size() + 1;
+
+			// script names are stored in forms of either:
+			//   i) "<name1>\x1<directory1>\0"
+			//  ii) "<name>\0"
+			if (auto pos = raw.find('\x01'); pos != std::string_view::npos) {
+				name = raw.substr(0, pos);
+				dir = raw.substr(pos + 1);
+			}
+			else {
+				name = raw;
+				dir = "";
+			}
+		}
+	};
+	static inline std::vector<script_name> script_names{};
+	static void init_script_names() {
+		if (script_names.empty()) {
+			auto* ptr = exedit.track_script_names;
+			while (*ptr != '\0') script_names.emplace_back(ptr);
+			script_names.shrink_to_fit();
+		}
+	}
+	// built-in script names.
+	constexpr static std::string_view const basic_track_mode_names[]{
+		"移動無し",
+		"直線移動",
+		"曲線移動",
+		"瞬間移動",
+		"中間点無視",
+		"移動量指定",
+		"ランダム移動",
+		"加減速移動",
+		"反復移動",
+	};
+
+	// to store buffer for the tooltip text.
+#ifndef _DEBUG
+	constinit
+#endif
+		static inline std::string curr_tooltip_text{};
+
+	// formatting the tooltip text according to the track mode.
+	static std::string format_tooltip(ExEdit::Object::TrackMode const& mode, int32_t param)
+	{
+		size_t const basic_idx = mode.num & 0x0f;
+		bool const acc = (mode.num & mode.isAccelerate) != 0,
+			dec = (mode.num & mode.isDecelerate) != 0,
+			is_scr = basic_idx == mode.isScript;
+
+		std::string ret{ is_scr ?
+			script_names[mode.script_idx].name :
+			basic_track_mode_names[basic_idx] };
+		ret += "\nパラメタ: " + std::to_string(param);
+		if (acc || dec) ret += ",";
+		if (acc) ret += " +加速";
+		if (dec) ret += " +減速";
+
+		return ret;
+	}
+
+	static inline constinit HWND tooltip = nullptr;
+
+public:
+	// should be called when each trackbar button recieves messages,
+	// and handles/updates tooltip states.
+	static void relay_tooltip_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam,
+		size_t idx, int32_t text_color)
+	{
+		if (tooltip == nullptr || *exedit.SettingDialogObjectIndex < 0) return;
+
+		switch (message) {
+		case WM_LBUTTONDOWN:
+		case WM_LBUTTONUP:
+		case WM_MBUTTONDOWN:
+		case WM_MBUTTONUP:
+		case WM_MOUSEMOVE:
+		case WM_NCMOUSEMOVE:
+		case WM_RBUTTONDOWN:
+		case WM_RBUTTONUP:
+		{
+			MSG msg{ .hwnd = hwnd, .message = message, .wParam = wparam, .lParam = lparam };
+			::SendMessageW(tooltip, TTM_RELAYEVENT, 0, reinterpret_cast<LPARAM>(&msg));
+			break;
+		}
+
+		case WM_NOTIFY:
+			if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == tooltip) {
+				switch (hdr->code) {
+				case TTN_GETDISPINFOA:
+				{
+					auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
+					auto const& mode = obj.track_mode[idx];
+					if (mode.num == 0) break; // 移動無し
+
+					curr_tooltip_text = format_tooltip(mode, obj.track_param[idx]);
+					reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = curr_tooltip_text.data();
+					break;
+				}
+
+				case NM_CUSTOMDRAW:
+				{
+					if (text_color < 0) break;
+
+					auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
+					if ((dhdr->nmcd.dwDrawStage & CDDS_PREPAINT) != 0)
+						::SetTextColor(dhdr->nmcd.hdc,
+							(std::rotl<uint32_t>(text_color, 16) & 0x00ff00ff) | (text_color & 0x0000ff00));
+					break;
+				}
+				}
+			}
+			break;
+		}
+	}
+
+	// creates a tooltip and associates it with relevant buttons.
+	static void setup_tooltip(HWND hwnd, bool anim, uint16_t delay, uint16_t duration)
+	{
+		if (tooltip != nullptr) return;
+
+		init_script_names();
+		tooltip = ::CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+			WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP | (anim ? TTS_NOFADE | TTS_NOANIMATE : 0),
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			hwnd, nullptr, exedit.fp->hinst_parent, nullptr);
+
+		::SetWindowPos(tooltip, HWND_TOPMOST, 0, 0, 0, 0,
+			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+		for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++) {
+			HWND tgt = exedit.hwnd_track_buttons[i];
+
+			// note that the only A-variant can successfully register
+			// if dark-mode isn't applied.
+			TTTOOLINFOA ti{
+				.cbSize = sizeof(ti),
+				.uFlags = TTF_IDISHWND | TTF_TRANSPARENT,
+				.hwnd = tgt,
+				.uId = reinterpret_cast<uintptr_t>(tgt),
+				.hinst = exedit.fp->hinst_parent,
+				.lpszText = LPSTR_TEXTCALLBACKA,
+			};
+			::SendMessageW(tooltip, TTM_ADDTOOLA, 0, reinterpret_cast<LPARAM>(&ti));
+		}
+		::SendMessageW(tooltip, TTM_SETMAXTIPWIDTH, 0, 640);
+
+		// initial values are... TTDT_INITIAL: 340, TTDT_AUTOPOP: 3400, TTDT_RESHOW: 68.
+		::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_INITIAL,	0xffff & delay);
+		::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_AUTOPOP,	0xffff & duration);
+		::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_RESHOW,	0xffff & (delay / 5));
+	}
+	static void term_tooltip()
+	{
+		if (tooltip != nullptr) {
+			::DestroyWindow(tooltip);
+			tooltip = nullptr;
+		}
+	}
+};
 
 
 ////////////////////////////////
@@ -937,10 +1105,15 @@ inline constinit struct Settings {
 	} filterName{ nullptr };
 
 	struct {
-		bool linked_track_invert_shift;
-	} easings{ false };
+		bool linked_track_invert_shift, wheel_click, tooltip, tip_anim;
+		uint16_t tip_delay, tip_duration;
+		int32_t tip_text_color; // 0xrrggbb or < 0 (not spcified).
 
-	constexpr bool is_enabled() const
+		constexpr static uint16_t min_time = 0, max_time = 60'000;
+		bool is_enabled() const { return wheel_click || tooltip; };
+	} easings{ false, true, false, true, 0, 10'000, -1 };
+
+	constexpr bool hooks_dialog() const
 	{
 		return textFocus.is_enabled() || textTweaks.is_enabled() ||
 			trackKbd.is_enabled() || trackMouse.is_enabled() || trackBtn.is_enabled() ||
@@ -1019,7 +1192,15 @@ inline constinit struct Settings {
 
 		load_str0(filterName., anim_eff_fmt,	"FilterName", "{}(アニメーション効果)", filterName.max_anim_eff_fmt_length, "");
 
-		load_bool(easings., linked_track_invert_shift, "Easings");
+		load_bool(easings.,	linked_track_invert_shift,	"Easings");
+		load_bool(easings.,	wheel_click,		"Easings");
+		load_bool(easings.,	tooltip,			"Easings");
+		load_bool(easings.,	tip_anim,			"Easings");
+		load_gen (easings.,	tip_delay,			"Easings",
+			[](auto x) { return std::clamp<int>(x, decltype(easings)::min_time, decltype(easings)::max_time); }, /* id */);
+		load_gen (easings.,	tip_duration,		"Easings",
+			[](auto x) { return std::clamp<int>(x, decltype(easings)::min_time, decltype(easings)::max_time); }, /* id */);
+		load_int(easings.,	tip_text_color,		"Easings");
 
 	#undef load_str
 	#undef load_key
@@ -1536,7 +1717,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
 }
 
-LRESULT CALLBACK trackbar_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto data)
+LRESULT CALLBACK trackbar_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto)
 {
 	switch (message) {
 	case WM_MOUSEWHEEL:
@@ -1584,6 +1765,31 @@ LRESULT CALLBACK filter_separator_hook(HWND hwnd, UINT message, WPARAM w, LPARAM
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, w, l);
+}
+// トラックバー変化方法指定のボタンのカスタム動作．
+LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto data)
+{
+	auto const idx = static_cast<size_t>(data);
+
+	// handle tooltip if exists.
+	if (settings.easings.tooltip)
+		Easings::relay_tooltip_message(hwnd, message, wparam, lparam, idx, settings.easings.tip_text_color);
+
+	switch (message) {
+	case WM_MBUTTONUP:
+		// customized behavior of wheel click.
+		if (settings.easings.wheel_click && *exedit.SettingDialogObjectIndex >= 0) {
+			// send a command to edit the easing parameter.
+			constexpr uint16_t param_set_command = 1122;
+			::PostMessageW(*exedit.hwnd_setting_dlg, WM_COMMAND, param_set_command, static_cast<LPARAM>(idx));
+		}
+		break;
+
+	case WM_DESTROY:
+		::RemoveWindowSubclass(hwnd, param_button_hook, id);
+		break;
+	}
+	return ::DefSubclassProc(hwnd, message, wparam, lparam);
 }
 
 // カーソル切り替えのためのキーボード監視用フック．
@@ -1690,7 +1896,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 	switch (message) {
 		// 拡張編集設定ダイアログ等のフック/アンフック．
 	case Message::ChangeWindow:
-		if (settings.is_enabled() && SettingDlg::is_valid()) {
+		if (settings.hooks_dialog() && SettingDlg::is_valid()) {
 			::SetWindowSubclass(SettingDlg::get_hwnd(), setting_dlg_hook, SettingDlg::hook_uid(),
 				reinterpret_cast<uintptr_t>(hwnd));
 
@@ -1714,12 +1920,20 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 				}
 			}
 		}
+		if (settings.easings.is_enabled()) {
+			for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++)
+				::SetWindowSubclass(exedit.hwnd_track_buttons[i], param_button_hook, Easings::hook_uid(), { i });
+			if (settings.easings.tooltip)
+				Easings::setup_tooltip(hwnd, settings.easings.tip_anim,
+					settings.easings.tip_delay, settings.easings.tip_duration);
+		}
 		break;
 	case Message::Exit:
 		// at this moment, the setting dialog is already destroyed.
 		TextBox::batch.discard(hwnd, PrvMsg::NotifyUpdate);
 		KeyboardHook::unhook();
 		TrackLabel::cursor.free();
+		if (settings.easings.tooltip) Easings::term_tooltip();
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
