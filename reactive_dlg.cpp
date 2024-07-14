@@ -1939,20 +1939,18 @@ BOOL func_init(FilterPlugin* fp)
 	load_settings(fp->dll_hinst);
 
 	// 競合確認．
+	auto conflict_warning = [&](std::string auf, char const* ini) {
+		::MessageBoxA(fp->hwnd, (auf + " と競合しているため一部機能を無効化しました．\n"
+			"次回以降このメッセージを表示させないためには，設定ファイルで以下の設定をしてください:\n\n"
+			+ ini).c_str(), fp->name, MB_OK | MB_ICONEXCLAMATION);
+	};
 	if (settings.trackBtn.is_enabled() && ::GetModuleHandleW(L"updown.auf") != nullptr) {
 		settings.trackBtn.modify = false;
-		::MessageBoxA(fp->hwnd, "updown.auf と競合しているため一部機能を無効化しました．\n"
-			"次回以降このメッセージを表示させないためには，設定ファイルで以下の設定をしてください:\n\n"
-			"[Track.Button]\nmodify=0",
-			fp->name, MB_OK | MB_ICONEXCLAMATION);
+		conflict_warning("updown.auf", "[Track.Button]\nmodify=0");
 	}
-
 	if (settings.filterName.is_enabled() && ::GetModuleHandleW(L"filter_name.auf") != nullptr) {
 		settings.filterName.anim_eff_fmt.reset();
-		::MessageBoxA(fp->hwnd, "filter_name.auf と競合しているため一部機能を無効化しました．\n"
-			"次回以降このメッセージを表示させないためには，設定ファイルで以下の設定をしてください:\n\n"
-			"[FilterName]\nanimation_effect=0",
-			fp->name, MB_OK | MB_ICONEXCLAMATION);
+		conflict_warning("filter_name.auf", "[FilterName]\nanim_eff_fmt=\"\"");
 	}
 
 	// トラックバーの変化方法の調整．
@@ -2055,7 +2053,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.60"
+#define PLUGIN_VERSION	"v1.61"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
