@@ -20,23 +20,6 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 
 
 ////////////////////////////////
-// 文字エンコード変換．
-////////////////////////////////
-struct Encodes {
-	template<UINT codepage = CP_UTF8>
-	static std::wstring to_wstring(const std::string_view& src) {
-		if (src.length() == 0) return L"";
-
-		auto wlen = ::MultiByteToWideChar(codepage, 0, src.data(), src.length(), nullptr, 0);
-		std::wstring ret(wlen, L'\0');
-		::MultiByteToWideChar(codepage, 0, src.data(), src.length(), ret.data(), wlen);
-
-		return ret;
-	}
-};
-
-
-////////////////////////////////
 // std::format() の簡易版．
 ////////////////////////////////
 class slim_formatter {
@@ -65,7 +48,6 @@ public:
 
 		return ret;
 	}
-	constexpr std::wstring operator()(char const* name) const { return (*this)(Encodes::to_wstring<CP_ACP>(name)); }
 	constexpr void init(std::wstring const& fmt)
 	{
 		base = fmt;

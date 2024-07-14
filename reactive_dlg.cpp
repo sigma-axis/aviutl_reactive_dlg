@@ -115,13 +115,13 @@ inline constinit struct ExEdit092 {
 
 	HWND*		filter_checkboxes;			// 0x14d368
 	HWND*		filter_separators;			// 0x1790d8
-	intptr_t*	exdata_table;				// 0x1e0fa8
+	uintptr_t*	exdata_table;				// 0x1e0fa8
 	char const*	basic_animation_names;		// 0x0c1f08
 	char const* track_script_names;			// 0x0ca010
 	uint32_t*	easing_specs_builtin;		// 0x0b8390
 	uint8_t*	easing_specs_script;		// 0x231d90
 
-	void*		cmp_shift_state_easing;		// 0x02ca90+1
+	uintptr_t	cmp_shift_state_easing;		// 0x02ca90
 
 	// index: index of the script; zero1, zero2: zero, unknown otherwise.
 	void(*load_easing_spec)(int32_t index, int32_t zero1, int32_t zero2); // 0x087940; 
@@ -130,7 +130,7 @@ private:
 	void init_pointers()
 	{
 		auto pick_addr = [exedit_base=reinterpret_cast<uintptr_t>(fp->dll_hinst)]
-			<class T>(T& target, ptrdiff_t offset) { target = reinterpret_cast<T>(exedit_base + offset); };
+			<class T>(T& target, ptrdiff_t offset) { target = std::bit_cast<T>(exedit_base + offset); };
 		pick_addr(ObjectArray_ptr,			0x1e0fa4);
 		pick_addr(SettingDialogObjectIndex,	0x177a10);
 		pick_addr(hwnd_setting_dlg,			0x1539c8);
@@ -153,7 +153,7 @@ private:
 		pick_addr(easing_specs_builtin,		0x0b8390);
 		pick_addr(easing_specs_script,		0x231d90);
 
-		pick_addr(cmp_shift_state_easing,	0x02ca90 + 1);
+		pick_addr(cmp_shift_state_easing,	0x02ca90);
 		pick_addr(load_easing_spec,			0x087940);
 	}
 } exedit;
@@ -169,6 +169,23 @@ namespace filter_id
 		anim_eff = 0x4f, // アニメーション効果
 	};
 }
+
+
+////////////////////////////////
+// 文字エンコード変換．
+////////////////////////////////
+struct Encodes {
+	template<UINT codepage = CP_UTF8>
+	static std::wstring to_wstring(const std::string_view& src) {
+		if (src.length() == 0) return L"";
+
+		auto wlen = ::MultiByteToWideChar(codepage, 0, src.data(), src.length(), nullptr, 0);
+		std::wstring ret(wlen, L'\0');
+		::MultiByteToWideChar(codepage, 0, src.data(), src.length(), ret.data(), wlen);
+
+		return ret;
+	}
+};
 
 
 ////////////////////////////////
@@ -700,7 +717,8 @@ private:
 
 		auto& cache = name_cache[name];
 		if (!cache.is_valid())
-			cache.init(exedit.filter_checkboxes[filter_index], format_anim_name(name));
+			cache.init(exedit.filter_checkboxes[filter_index],
+				format_anim_name(Encodes::to_wstring<CP_ACP>(name)));
 		return &cache;
 	}
 
@@ -1942,7 +1960,7 @@ BOOL func_init(FilterPlugin* fp)
 		// 0f 8c 87 00 00 00	jl
 		// V
 		// 0f 8d 87 00 00 00	jge
-		memory::ProtectHelper::write(exedit.cmp_shift_state_easing, byte{ 0x8d });
+		memory::ProtectHelper::write(exedit.cmp_shift_state_easing + 1, byte{ 0x8d });
 
 	return TRUE;
 }
