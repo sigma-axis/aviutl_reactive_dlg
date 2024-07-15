@@ -116,8 +116,11 @@ inline constinit struct ExEdit092 {
 	HWND*		filter_checkboxes;			// 0x14d368
 	HWND*		filter_separators;			// 0x1790d8
 	uintptr_t*	exdata_table;				// 0x1e0fa8
+	char const*	basic_scene_change_names;	// 0x0aef38
 	char const*	basic_animation_names;		// 0x0c1f08
 	char const* track_script_names;			// 0x0ca010
+	char const*	basic_custom_obj_names;		// 0x0ce090
+	char const*	basic_camera_eff_names;		// 0x0d20d0
 	uint32_t*	easing_specs_builtin;		// 0x0b8390
 	uint8_t*	easing_specs_script;		// 0x231d90
 
@@ -148,8 +151,11 @@ private:
 		pick_addr(filter_checkboxes,		0x14d368);
 		pick_addr(filter_separators,		0x1790d8);
 		pick_addr(exdata_table,				0x1e0fa8);
+		pick_addr(basic_scene_change_names,	0x0aef38);
 		pick_addr(basic_animation_names,	0x0c1f08);
 		pick_addr(track_script_names,		0x0ca010);
+		pick_addr(basic_custom_obj_names,	0x0ce090);
+		pick_addr(basic_camera_eff_names,	0x0d20d0);
 		pick_addr(easing_specs_builtin,		0x0b8390);
 		pick_addr(easing_specs_script,		0x231d90);
 
@@ -166,7 +172,10 @@ namespace filter_id
 		play_std = 0x0c, // 標準再生
 		particle = 0x0d, // パーティクル出力
 
+		scn_chg  = 0x0e, // シーンチェンジ
 		anim_eff = 0x4f, // アニメーション効果
+		cust_obj = 0x50, // カスタムオブジェクト
+		cam_eff  = 0x61, // カメラ効果
 	};
 }
 
@@ -623,59 +632,75 @@ public:
 ////////////////////////////////
 struct FilterName : SettingDlg {
 private:
+#ifndef _DEBUG
+	constinit // somehow it causes an error for debug build.
+#endif
 	// names of build-in animation effects.
-	static inline std::vector<char const*> basic_anim_names{};
-	static void init_basic_anim_names()
-	{
-		if (basic_anim_names.empty()) {
-			for (auto name = exedit.basic_animation_names;
-				name[0] != '\0'; name += std::strlen(name) + 1)
-				basic_anim_names.push_back(name);
+	static inline class {
+		std::vector<char const*> names{};
+		char const* find(size_t idx) {
+			// dynamically construct index -> name mapping.
+			while (idx >= names.size()) {
+				auto str = names.back();
+				str += std::strlen(str) + 1;
+				if (str[0] == '\0') return nullptr;
+				names.push_back(str);
+			}
+			return names[idx];
 		}
-	}
+	public:
+		// supply this struct with the heading pointer, turning the functionality enabled.
+		void init(char const* head) {
+			names.clear();
+			names.push_back(head);
+		}
 
-	// the exdata structure for animation effects.
-	using anim_exdata = ExEdit::Exdata::efAnimationEffect;
-	// retrieves the name of animation effects from exdata, including external scripts.
-	static char const* get_anim_name(anim_exdata& exdata) {
-		return exdata.name[0] != '\0' ? exdata.name :
-			(init_basic_anim_names(), basic_anim_names[exdata.type]);
-	}
+		// retrieves the name of the script for the fiter at the given index of the given object.
+		// the filter is known to have the specific type of exdata.
+		template<class ExDataT>
+		char const* get(ExEdit::Object const& leader, ExEdit::Object::FilterParam const& filter_param) {
+			ptrdiff_t offset = leader.exdata_offset + filter_param.exdata_offset;
+			auto exdata = reinterpret_cast<ExDataT*>((*exedit.exdata_table) + offset + 0x0004);
+			return exdata->name[0] != '\0' ? exdata->name : find(exdata->type);
+		}
+	} basic_anim_names{}, basic_cust_obj_names{}, basic_cam_eff_names{}, basic_scn_change_names{};
+
+	// the exdata structure for filters based on scripts.
+	using anim_exdata = ExEdit::Exdata::efAnimationEffect; // also applies to camera eff and custom object.
+	using scene_exdata = ExEdit::Exdata::efSceneChange;
 
 	// exdata is only available for "mid-point-leading" objects.
 	static ExEdit::Object& leading_object(ExEdit::Object& obj) {
 		if (obj.index_midpt_leader < 0) return obj;
 		else return (*exedit.ObjectArray_ptr)[obj.index_midpt_leader];
 	}
-
-	// retrieves exdata for animation effects at the given index of the given object,
-	// or nullptr if it's not an animation effect.
-	static anim_exdata* get_anim_exdata(ExEdit::Object& obj, int32_t filter_index)
+	// return the script name of the filter at the given index in the object,
+	// or nullptr if it's not a script-based filter, plus the filter id.
+	static std::pair<char const*, filter_id::id> get_script_name(ExEdit::Object& obj, int32_t filter_index)
 	{
 		auto& leader = leading_object(obj);
 		auto& filter_param = leader.filter_param[filter_index];
-		if (!filter_param.is_valid() || filter_param.id != filter_id::anim_eff) return nullptr;
 
-		ptrdiff_t offset = leader.exdata_offset + filter_param.exdata_offset;
-		return reinterpret_cast<anim_exdata*>((*exedit.exdata_table) + offset + 0x0004);
+		if (filter_param.is_valid()) {
+			switch (filter_param.id) {
+			case filter_id::anim_eff:
+				return { basic_anim_names.get<anim_exdata>(leader, filter_param), filter_id::anim_eff };
+
+			case filter_id::cust_obj:
+				return { basic_cust_obj_names.get<anim_exdata>(leader, filter_param), filter_id::cust_obj };
+
+			case filter_id::cam_eff:
+				return { basic_cam_eff_names.get<anim_exdata>(leader, filter_param), filter_id::cam_eff };
+
+			case filter_id::scn_chg:
+				return { basic_scn_change_names.get<anim_exdata>(leader, filter_param), filter_id::scn_chg };
+			}
+		}
+		return { nullptr, filter_id::id{-1} };
 	}
-	// retrieves the name of animation effect at the given index of the selected object,
-	// or nullptr if it's not an animation effect.
-	static char const* find_anim_name(size_t filter_index)
-	{
-		if (!is_valid()) return nullptr;
 
-		auto idx = *exedit.SettingDialogObjectIndex;
-		if (idx < 0) return nullptr;
-
-		auto* exdata = get_anim_exdata((*exedit.ObjectArray_ptr)[idx], filter_index);
-		if (exdata == nullptr) return nullptr;
-
-		return get_anim_name(*exdata);
-	}
-
-	// structure for cached formatted names and its rendering size.
-	struct anim_name_cache {
+	// structure for cached formatted names and its rendered size.
+	struct filter_name_cache {
 		std::wstring caption = L"";
 		int width = -1;	// width for the text only.
 
@@ -703,34 +728,75 @@ private:
 			sep_height = 2;			// height for the separator.
 
 	};
-	static inline std::map<std::string, anim_name_cache> name_cache{};
+	// stores and manages caches.
+	class cache_manager {
+		std::map<std::string, filter_name_cache> cache;
+		slim_formatter const formatter;
+	public:
+		cache_manager(std::wstring const& fmt) : formatter{ fmt }, cache{} {}
+		filter_name_cache const& find_cache(char const* name, size_t idx) {
+			auto& ret = cache[name];
+			if (!ret.is_valid())
+				ret.init(exedit.filter_checkboxes[idx], formatter(Encodes::to_wstring<CP_ACP>(name)));
+			return ret;
+		}
+	};
+	static inline constinit std::unique_ptr<cache_manager>
+		anim_eff{},
+		cust_std{}, cust_ext{}, cust_prtcl{},
+		cam_eff{},
+		scn_change{};
 
-#ifndef _DEBUG
-	constinit // somehow it causes an error for debug build.
-#endif // _DEBUG
-		static inline slim_formatter format_anim_name;
 	// find or create a cached formatted names at the given filter index of the selected object.
-	static anim_name_cache* find_anim_name_cache(size_t filter_index)
+	static filter_name_cache const* find_script_name_cache(size_t filter_index)
 	{
-		auto name = find_anim_name(filter_index);
+		if (!is_valid()) return nullptr;
+
+		auto idx = *exedit.SettingDialogObjectIndex;
+		if (idx < 0) return nullptr;
+
+		auto& obj = (*exedit.ObjectArray_ptr)[idx];
+		auto [name, id] = get_script_name(obj, filter_index);
 		if (name == nullptr) return nullptr;
 
-		auto& cache = name_cache[name];
-		if (!cache.is_valid())
-			cache.init(exedit.filter_checkboxes[filter_index],
-				format_anim_name(Encodes::to_wstring<CP_ACP>(name)));
-		return &cache;
+		cache_manager* cache_source;
+		switch (id) {
+		case filter_id::anim_eff:
+			cache_source = anim_eff.get(); break;
+		case filter_id::cust_obj:
+		{
+			auto& draw_filter = obj.filter_param[obj.countFilters() - 1];
+			switch (draw_filter.id) {
+			case filter_id::draw_std:
+				cache_source = cust_std.get(); break;
+			case filter_id::draw_ext:
+				cache_source = cust_ext.get(); break;
+			case filter_id::particle:
+				cache_source = cust_prtcl.get(); break;
+			default: return nullptr;
+			}
+			break;
+		}
+		case filter_id::cam_eff:
+			cache_source = cam_eff.get(); break;
+		case filter_id::scn_chg:
+			cache_source = scn_change.get(); break;
+		default:
+			std::unreachable();
+		}
+		return cache_source == nullptr ? nullptr :
+			&cache_source->find_cache(name, filter_index);
 	}
 
 	// holding the current states of manipulation of the check buttons and the separators.
-	static inline struct hook_state {
+	static inline constinit struct hook_state {
 		enum State : uint32_t {
 			idle,
 			renew,	// the filter itself is changing.
 			manip,	// manipulating intentionally with this dll.
 		} state = idle;
 
-		anim_name_cache const* candidate = nullptr;
+		filter_name_cache const* candidate = nullptr;
 	} hook_states[ExEdit::Object::MAX_FILTER]{};
 
 	// adjusts positions and sizes of the check button and the separator.
@@ -767,8 +833,8 @@ public:
 		auto& state = hook_states[filter_index];
 		if (state.state != hook_state::idle) return nullptr;
 
-		// it should be an animation effect.
-		auto* cache = find_anim_name_cache(filter_index);
+		// it should be a supported filter.
+		auto* cache = find_script_name_cache(filter_index);
 		if (cache == nullptr) return nullptr;
 
 		// then prepare the hook for the next call of WM_SIZE to the separator.
@@ -793,7 +859,7 @@ public:
 	// which might be the one that selects animation types.
 	static size_t idx_filter_from_combo_id(int id_combo)
 	{
-		constexpr size_t invalid_return = std::numeric_limits<size_t>::max();
+		constexpr auto invalid_return = std::numeric_limits<size_t>::max();
 
 		// the setting dialog must be alive.
 		if (!is_valid()) return invalid_return;
@@ -810,26 +876,33 @@ public:
 		if (idx_combo < 0 || idx_combo >= ExEdit::Object::MAX_CHECK) return invalid_return;
 
 		// traverse the filter to find the index.
-		size_t idx_filter; bool was_anim = false;
-		for (idx_filter = 0; idx_filter < std::size(filter_param); idx_filter++) {
-			auto const& filter = filter_param[idx_filter];
-			if (!filter.is_valid() || idx_combo < filter.check_begin) break;
-			was_anim = filter.id == filter_id::anim_eff;
+		for (size_t i = 0; i < std::size(filter_param); i++) {
+			auto const& filter = filter_param[i];
+			int j = idx_combo - filter.check_begin;
+			if (!filter.is_valid() || j < 0) break;
+			switch (filter.id) {
+			case filter_id::scn_chg:	if (j == 2) break; else continue;
+			case filter_id::anim_eff:	if (j == 0 || j == 1) break; else continue;
+			case filter_id::cust_obj:	if (j == 0 || j == 1) break; else continue;
+			case filter_id::cam_eff:	if (j == 0 || j == 1) break; else continue;
+			default: continue;
+			}
+			return i;
 		}
-		return was_anim ? idx_filter - 1 : invalid_return;
+		return invalid_return;
 	}
 
 	// should be called when a combo box changed it's selection,
 	// after the default procedure was processed.
 	// makes updates to the filter names if necessary.
-	static void on_anim_type_changed(size_t filter_index)
+	static void on_script_changed(size_t filter_index)
 	{
 		// the state must be `idle`
 		auto& state = hook_states[filter_index];
 		if (state.state != hook_state::idle) return;
 
-		// it must be an animation effect.
-		auto* cache = find_anim_name_cache(filter_index);
+		// it must be a supported filter.
+		auto* cache = find_script_name_cache(filter_index);
 		if (cache == nullptr) return;
 
 		// then update the filter name and adjust the layout.
@@ -843,8 +916,21 @@ public:
 	}
 
 	// should be called to acquire the formatting string.
-	static void init(std::wstring const& name_format) {
-		format_anim_name.init(name_format);
+	static void init(std::unique_ptr<std::wstring> const& anim_eff_fmt,
+		std::unique_ptr<std::wstring> const& cust_std_fmt, std::unique_ptr<std::wstring> const& cust_ext_fmt, std::unique_ptr<std::wstring> const& cust_prtcl_fmt,
+		std::unique_ptr<std::wstring> const& cam_eff_fmt, std::unique_ptr<std::wstring> const& scn_change_fmt) {
+
+		if (anim_eff_fmt)	anim_eff	= std::make_unique<cache_manager>(*anim_eff_fmt);
+		if (cust_std_fmt)	cust_std	= std::make_unique<cache_manager>(*cust_std_fmt);
+		if (cust_ext_fmt)	cust_ext	= std::make_unique<cache_manager>(*cust_ext_fmt);
+		if (cust_prtcl_fmt)	cust_prtcl	= std::make_unique<cache_manager>(*cust_prtcl_fmt);
+		if (scn_change_fmt)	scn_change	= std::make_unique<cache_manager>(*scn_change_fmt);
+		if (cam_eff_fmt)	cam_eff		= std::make_unique<cache_manager>(*cam_eff_fmt);
+
+		basic_anim_names.init(exedit.basic_animation_names);
+		basic_cust_obj_names.init(exedit.basic_custom_obj_names);
+		basic_cam_eff_names.init(exedit.basic_camera_eff_names);
+		basic_scn_change_names.init(exedit.basic_scene_change_names);
 	}
 };
 
@@ -916,7 +1002,7 @@ private:
 
 	// to store buffer for the tooltip text.
 #ifndef _DEBUG
-	constinit
+	constinit // somehow it causes an error for debug build.
 #endif
 		static inline std::string curr_tooltip_text{};
 
@@ -1174,10 +1260,16 @@ inline constinit struct Settings {
 	} dropdownKbd{ true };
 
 	struct {
-		std::unique_ptr<std::wstring> anim_eff_fmt;
-		constexpr static size_t max_anim_eff_fmt_length = 256;
-		bool is_enabled() const { return static_cast<bool>(anim_eff_fmt); }
-	} filterName{ nullptr };
+		std::unique_ptr<std::wstring> anim_eff_fmt,
+			cust_std_fmt, cust_ext_fmt, cust_particle_fmt,
+			cam_eff_fmt, scn_change_fmt;
+		constexpr static size_t max_fmt_length = 256;
+		bool is_enabled() const {
+			return anim_eff_fmt ||
+				cust_std_fmt || cust_ext_fmt || cust_particle_fmt ||
+				cam_eff_fmt || scn_change_fmt;
+		}
+	} filterName{ nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 
 	struct {
 		bool linked_track_invert_shift, wheel_click, tooltip, tip_anim;
@@ -1265,7 +1357,12 @@ inline constinit struct Settings {
 
 		load_bool(dropdownKbd., search,			"Dropdown.Keyboard");
 
-		load_str0(filterName., anim_eff_fmt,	"FilterName", "{}(アニメーション効果)", filterName.max_anim_eff_fmt_length, "");
+		load_str0(filterName., anim_eff_fmt,	"FilterName", "{}(アニメーション効果)", filterName.max_fmt_length, "");
+		load_str0(filterName., cust_std_fmt,	"FilterName", "{}(カスタムオブジェクト)[標準描画]", filterName.max_fmt_length, "");
+		load_str0(filterName., cust_ext_fmt,	"FilterName", "{}(カスタムオブジェクト)[拡張描画]", filterName.max_fmt_length, "");
+		load_str0(filterName., cust_particle_fmt, "FilterName", "{}(カスタムオブジェクト)[パーティクル出力]", filterName.max_fmt_length, "");
+		load_str0(filterName., cam_eff_fmt,		"FilterName", "{}(カメラ効果)", filterName.max_fmt_length, "");
+		load_str0(filterName., scn_change_fmt,	"FilterName", "{}(シーンチェンジ)", filterName.max_fmt_length, "");
 
 		load_bool(easings.,	linked_track_invert_shift,	"Easings");
 		load_bool(easings.,	wheel_click,		"Easings");
@@ -1691,14 +1788,14 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 					DropdownList::on_notify_close();
 				break;
 
-				// アニメーション効果の変更を監視．
+				// 選択スクリプトの変更を監視．
 			case CBN_SELCHANGE:
 				if (settings.filterName.is_enabled() && check_window_class(ctrl, WC_COMBOBOXW)) {
 					if (auto idx = FilterName::idx_filter_from_combo_id(wparam & 0xffff);
 						idx < ExEdit::Object::MAX_FILTER) {
 
 						auto ret = ::DefSubclassProc(hwnd, message, wparam, lparam);
-						FilterName::on_anim_type_changed(idx);
+						FilterName::on_script_changed(idx);
 						return ret;
 					}
 				}
@@ -1986,7 +2083,9 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 			}
 
 			if (settings.filterName.is_enabled()) {
-				FilterName::init(*settings.filterName.anim_eff_fmt);
+				FilterName::init(settings.filterName.anim_eff_fmt,
+					settings.filterName.cust_std_fmt, settings.filterName.cust_ext_fmt, settings.filterName.cust_particle_fmt,
+					settings.filterName.cam_eff_fmt, settings.filterName.scn_change_fmt);
 				for (size_t i = 0; i < ExEdit::Object::MAX_FILTER; i++) {
 					::SetWindowSubclass(exedit.filter_checkboxes[i], filter_name_hook, FilterName::hook_uid(), { i });
 					::SetWindowSubclass(exedit.filter_separators[i], filter_separator_hook, FilterName::hook_uid(), { i });
@@ -2053,7 +2152,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.61"
+#define PLUGIN_VERSION	"v1.62-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)

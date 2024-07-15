@@ -48,10 +48,9 @@ public:
 
 		return ret;
 	}
-	constexpr void init(std::wstring const& fmt)
+	constexpr slim_formatter(std::wstring const& fmt)
 	{
 		base = fmt;
-		holes.clear();
 
 		// find the patern "{+}?" (e.g. "{}", "{{{}", "{{{{{"),
 		// and modify it for future use.
