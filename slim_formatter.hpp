@@ -24,21 +24,21 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 ////////////////////////////////
 class slim_formatter {
 	std::wstring base{};
-	std::vector<size_t> holes{}; // the 'holes' where the animation name is placed in.
+	std::vector<size_t> holes{}; // the 'holes' where the parameter is placed in.
 
 public:
-	constexpr std::wstring operator()(std::wstring const& name) const
+	constexpr std::wstring operator()(std::wstring const& param) const
 	{
-		std::wstring ret(base.size() + name.size() * holes.size(), L'\0');
+		std::wstring ret(base.size() + param.size() * holes.size(), L'\0');
 
-		// alternatingly copy to `ret` the strings `base` and `name`.
+		// alternatingly copy to `ret` the strings `base` and `param`.
 		size_t l = 0; auto p = ret.data();
 		for (auto i : holes) {
 			base.copy(p, i - l, l);
 			p += i - l;
 
-			name.copy(p, name.size());
-			p += name.size();
+			param.copy(p, param.size());
+			p += param.size();
 
 			l = i;
 		}

@@ -628,7 +628,7 @@ public:
 
 
 ////////////////////////////////
-// アニメーション効果の名前表示．
+// フィルタ効果のスクリプト名表示．
 ////////////////////////////////
 struct FilterName : SettingDlg {
 private:
@@ -1000,12 +1000,6 @@ private:
 			flag_loaded		= 1 << 7;
 	};
 
-	// to store buffer for the tooltip text.
-#ifndef _DEBUG
-	constinit // somehow it causes an error for debug build.
-#endif
-		static inline std::string curr_tooltip_text{};
-
 	// formatting the tooltip text according to the track mode.
 	static std::string format_tooltip(ExEdit::Object::TrackMode const& mode, int32_t param)
 	{
@@ -1077,6 +1071,11 @@ public:
 					auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
 					auto const& mode = obj.track_mode[idx];
 					if (mode.num == 0) break; // 移動無し
+
+				#ifndef _DEBUG
+					constinit // somehow it causes an error for debug build.
+				#endif
+					static std::string curr_tooltip_text{};
 
 					// store the string and return it.
 					curr_tooltip_text = format_tooltip(mode, obj.track_param[idx]);
@@ -1289,19 +1288,19 @@ inline constinit struct Settings {
 
 	void load(const char* ini_file)
 	{
-		auto read_raw = [&](auto def, const char* section, const char* key) {
+		auto read_raw = [&](auto def, char const* section, char const* key) {
 			return static_cast<decltype(def)>(
 				::GetPrivateProfileIntA(section, key, static_cast<int32_t>(def), ini_file));
 		};
-		auto read_modkey = [&](modkeys def, const char* section, const char* key) {
+		auto read_modkey = [&](modkeys def, char const* section, char const* key) {
 			char str[std::bit_ceil(std::size("ctrl + shift + alt ****"))];
 			::GetPrivateProfileStringA(section, key, def.canon_name(), str, std::size(str), ini_file);
 			return modkeys{ str, def };
 		};
-		auto read_string = [&]<size_t max_len>(const char* def, const char* section, const char* key, const char* nil) {
+		auto read_string = [&]<size_t max_len>(char8_t const* def, char const* section, char const* key, char8_t const* nil) {
 			char str[max_len + 1];
-			::GetPrivateProfileStringA(section, key, def, str, std::size(str), ini_file);
-			if (std::strcmp(str, nil) == 0)
+			::GetPrivateProfileStringA(section, key, reinterpret_cast<char const*>(def), str, std::size(str), ini_file);
+			if (std::strcmp(str, reinterpret_cast<char const*>(nil)) == 0)
 				return std::unique_ptr<std::wstring>{ nullptr };
 			return std::make_unique<std::wstring>(Encodes::to_wstring(str));
 		};
@@ -1325,8 +1324,8 @@ inline constinit struct Settings {
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
 		load_gen (textTweaks., tabstops_script,	"TextBox.Tweaks",
 			[&](auto x) { return std::clamp(x, textTweaks.min_tabstops, textTweaks.max_tabstops); }, /* id */);
-		load_str (textTweaks., replace_tab_text,	"TextBox.Tweaks", "\t", textTweaks.max_replace_tab_length);
-		load_str (textTweaks., replace_tab_script,	"TextBox.Tweaks", "\t", textTweaks.max_replace_tab_length);
+		load_str (textTweaks., replace_tab_text,	"TextBox.Tweaks", u8"\t", textTweaks.max_replace_tab_length);
+		load_str (textTweaks., replace_tab_script,	"TextBox.Tweaks", u8"\t", textTweaks.max_replace_tab_length);
 
 		load_bool(trackKbd., updown,			"Track.Keyboard");
 		load_bool(trackKbd., updown_clamp,		"Track.Keyboard");
@@ -1357,12 +1356,12 @@ inline constinit struct Settings {
 
 		load_bool(dropdownKbd., search,			"Dropdown.Keyboard");
 
-		load_str0(filterName., anim_eff_fmt,	"FilterName", "{}(アニメーション効果)", filterName.max_fmt_length, "");
-		load_str0(filterName., cust_std_fmt,	"FilterName", "{}(カスタムオブジェクト)[標準描画]", filterName.max_fmt_length, "");
-		load_str0(filterName., cust_ext_fmt,	"FilterName", "{}(カスタムオブジェクト)[拡張描画]", filterName.max_fmt_length, "");
-		load_str0(filterName., cust_particle_fmt, "FilterName", "{}(カスタムオブジェクト)[パーティクル出力]", filterName.max_fmt_length, "");
-		load_str0(filterName., cam_eff_fmt,		"FilterName", "{}(カメラ効果)", filterName.max_fmt_length, "");
-		load_str0(filterName., scn_change_fmt,	"FilterName", "{}(シーンチェンジ)", filterName.max_fmt_length, "");
+		load_str0(filterName., anim_eff_fmt,	"FilterName", u8"{}(アニメーション効果)", filterName.max_fmt_length, u8"");
+		load_str0(filterName., cust_std_fmt,	"FilterName", u8"{}(カスタムオブジェクト)[標準描画]", filterName.max_fmt_length, u8"");
+		load_str0(filterName., cust_ext_fmt,	"FilterName", u8"{}(カスタムオブジェクト)[拡張描画]", filterName.max_fmt_length, u8"");
+		load_str0(filterName., cust_particle_fmt, "FilterName", u8"{}(カスタムオブジェクト)[パーティクル出力]", filterName.max_fmt_length, u8"");
+		load_str0(filterName., cam_eff_fmt,		"FilterName", u8"{}(カメラ効果)", filterName.max_fmt_length, u8"");
+		load_str0(filterName., scn_change_fmt,	"FilterName", u8"{}(シーンチェンジ)", filterName.max_fmt_length, u8"");
 
 		load_bool(easings.,	linked_track_invert_shift,	"Easings");
 		load_bool(easings.,	wheel_click,		"Easings");
@@ -2152,7 +2151,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.62"
+#define PLUGIN_VERSION	"v1.63-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
