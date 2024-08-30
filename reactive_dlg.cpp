@@ -130,6 +130,9 @@ inline constinit struct ExEdit092 {
 	// index: index of the script; zero1, zero2: zero, unknown otherwise.
 	void(*load_easing_spec)(int32_t index, int32_t zero1, int32_t zero2); // 0x087940
 
+	Filter**	loaded_filter_table;		// 0x187c98
+	//int32_t*	loaded_filter_count;		// 0x146248
+
 private:
 	void init_pointers()
 	{
@@ -163,6 +166,9 @@ private:
 		pick_addr(cmp_shift_state_easing,	0x02ca90);
 		pick_addr(call_easing_popup_menu,	0x02d4b5);
 		pick_addr(load_easing_spec,			0x087940);
+
+		pick_addr(loaded_filter_table,		0x187c98);
+		//pick_addr(loaded_filter_count,		0x146248);
 	}
 } exedit;
 
@@ -470,16 +476,10 @@ public:
 		const auto track_n = obj.track_n;
 		int track_o = 0;
 
-		// needs re-ordering the indices if the final filter is of the certain types.
-		switch (const auto& filter_last = obj.filter_param[obj.countFilters() - 1]; filter_last.id) {
-			using enum filter_id::id;
-		case draw_std:
-		case draw_ext:
-		case play_std:
-		case particle:
+		// needs re-ordering the indices if the final filter is of the certain type.
+		if (const auto& filter_last = obj.filter_param[obj.countFilters() - 1];
+			has_flag_or(exedit.loaded_filter_table[filter_last.id]->flag, Filter::Flag::Output))
 			track_o = filter_last.track_begin; // alter offset.
-			break;
-		}
 
 		for (int j = 0; j < track_n; j++) {
 			// find the index of the track.
@@ -2280,7 +2280,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.70-beta2"
+#define PLUGIN_VERSION	"v1.70-beta3"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
