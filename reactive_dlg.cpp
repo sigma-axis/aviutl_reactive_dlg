@@ -125,9 +125,10 @@ inline constinit struct ExEdit092 {
 	uint8_t*	easing_specs_script;		// 0x231d90
 
 	uintptr_t	cmp_shift_state_easing;		// 0x02ca90
+	byte*		call_easing_popup_menu;		// 0x02d4b5
 
 	// index: index of the script; zero1, zero2: zero, unknown otherwise.
-	void(*load_easing_spec)(int32_t index, int32_t zero1, int32_t zero2); // 0x087940; 
+	void(*load_easing_spec)(int32_t index, int32_t zero1, int32_t zero2); // 0x087940
 
 private:
 	void init_pointers()
@@ -160,6 +161,7 @@ private:
 		pick_addr(easing_specs_script,		0x231d90);
 
 		pick_addr(cmp_shift_state_easing,	0x02ca90);
+		pick_addr(call_easing_popup_menu,	0x02d4b5);
 		pick_addr(load_easing_spec,			0x087940);
 	}
 } exedit;
@@ -205,7 +207,7 @@ bool check_window_class(HWND hwnd, const wchar_t(&classname)[N])
 {
 	wchar_t buf[N + 1];
 	return ::GetClassNameW(hwnd, buf, N + 1) == N - 1
-		&& std::memcmp(buf, classname, sizeof(wchar_t) * (N - 1)) == 0;
+		&& std::wmemcmp(buf, classname, N - 1) == 0;
 }
 
 inline auto get_edit_selection(HWND edit_box)
@@ -225,6 +227,15 @@ inline modkeys curr_modkeys() {
 }
 inline bool key_pressed_any(auto... vkeys) {
 	return ((::GetKeyState(vkeys) < 0) || ...);
+}
+
+inline byte set_key_state(byte vkey, byte state)
+{
+	byte states[0x100];
+	std::ignore = ::GetKeyboardState(states);
+	std::swap(state, states[vkey]);
+	::SetKeyboardState(states);
+	return state;
 }
 
 inline void discard_message(HWND hwnd, UINT message) {
@@ -369,17 +380,30 @@ public:
 struct TrackLabel : SettingDlg {
 private:
 	// finding edit boxes for trackbars.
-	constexpr static int id_label_left_base = 4100, id_label_right_base = 4200;
+	constexpr static uint32_t id_button_base = 4000,
+		id_label_left_base = 4100, id_label_right_base = 4200;
 
 public:
 	static uintptr_t hook_uid() { return SettingDlg::hook_uid() + 2; }
 
-	static std::pair<bool, int8_t> check_edit_box_id(uint32_t id)
+	static constexpr int8_t check_button_id(uint32_t id)
+	{
+		auto idx = id - id_button_base;
+		if (idx >= Object::MAX_TRACK) return -1;
+		return static_cast<int8_t>(idx);
+	}
+	static constexpr uint32_t button_id(size_t idx) {
+		return idx + id_button_base;
+	}
+	static constexpr std::pair<bool, int8_t> check_edit_box_id(uint32_t id)
 	{
 		bool left = id < id_label_right_base;
 		id -= left ? id_label_left_base : id_label_right_base;
 		if (id >= Object::MAX_TRACK) return { false, -1 };
 		return { left , static_cast<int8_t>(id) };
+	}
+	static constexpr uint32_t label_id(bool left, size_t idx) {
+		return idx + (left ? id_label_left_base : id_label_right_base);
 	}
 	static bool check_edit_box_style(HWND edit)
 	{
@@ -479,17 +503,30 @@ public:
 
 private:
 	// manipulation of the currently selected trackbar.
-	static inline constinit const TrackInfo* info = nullptr;
-	static inline constinit wchar_t last_text[15] = L"";
+	static inline constinit TrackInfo const* info = nullptr;
+	static inline constinit wchar_t last_text[16] = L"";
 
 public:
 	static inline POINT mouse_pos_on_focused{};
-	static const TrackInfo& curr_info() { return *info; }
-	static void on_setfocus(const TrackInfo* track_info)
+	static inline struct {
+		uint16_t idx = ~0;
+		byte alt_state = 0;
+		constexpr bool is_active() const { return idx < Object::MAX_TRACK; }
+		constexpr void activate(size_t idx) { this->idx = static_cast<decltype(this->idx)>(idx); }
+		constexpr void deactivate() { idx = ~0; alt_state = 0; }
+	} easing_menu;
+	static TrackInfo const& curr_info() { return *info; }
+	constexpr static size_t max_num_len = std::size(last_text);
+	static size_t find_info_index(TrackInfo const* ptr_info) {
+		return std::min<size_t>(ptr_info - exedit.trackinfo_left, ptr_info - exedit.trackinfo_right);
+	}
+	static void on_setfocus(TrackInfo const* track_info)
 	{
-		::GetCursorPos(&mouse_pos_on_focused);
 		info = track_info;
-		::GetWindowTextW(track_info->hwnd_label, last_text, std::size(last_text));
+		if (!easing_menu.is_active()) {
+			::GetCursorPos(&mouse_pos_on_focused);
+			::GetWindowTextW(track_info->hwnd_label, last_text, std::size(last_text));
+		}
 	}
 	static void on_killfocus() { info = nullptr; }
 	static bool is_focused() { return info != nullptr; }
@@ -1178,15 +1215,17 @@ inline constinit struct Settings {
 			return (boost(keys) ? rate_boost : 1) * (decimal(keys) ? 1 : info.precision());
 		}
 	};
+	struct shortcut_key {
+		byte vkey;
+		modkeys mkeys;
+		constexpr bool match(byte code, modkeys keys) const {
+			return is_enabled() && code == vkey && mkeys == keys;
+		}
+		constexpr bool is_enabled() const { return vkey != 0; }
+	};
 
 	struct {
-		struct {
-			byte vkey;
-			modkeys mkeys;
-			constexpr bool match(byte code, modkeys keys) const {
-				return vkey != 0 && code == vkey && mkeys == keys;
-			}
-		} forward{ VK_TAB, modkeys::none }, backward{ VK_TAB, modkeys::shift };
+		shortcut_key forward{ VK_TAB, modkeys::none }, backward{ VK_TAB, modkeys::shift };
 		constexpr bool is_enabled() const { return forward.vkey != 0 || backward.vkey != 0; }
 		constexpr bool match(bool& is_forward, auto... args)
 		{
@@ -1214,14 +1253,15 @@ inline constinit struct Settings {
 
 	struct : modkey_set {
 		bool updown, updown_clamp, escape;
-		constexpr bool is_enabled() const { return updown || escape; }
+		shortcut_key easing_menu;
+		constexpr bool is_enabled() const { return updown || escape || easing_menu.is_enabled(); }
 		constexpr bool no_wrong_keys(modkeys keys) const
 		{
 			return keys <= (keys_decimal | keys_boost);
 		}
 	} trackKbd{
 		{ modkeys::shift, modkeys::alt, false, 10, },
-		true, false, true,
+		true, false, true, { 0, modkeys::none },
 	};
 
 	struct : modkey_set {
@@ -1335,6 +1375,8 @@ inline constinit struct Settings {
 		load_bool(trackKbd., def_decimal,		"Track.Keyboard");
 		load_gen (trackKbd., rate_boost,		"Track.Keyboard",
 			[](auto x) { return std::clamp(x, modkey_set::min_rate_boost, modkey_set::max_rate_boost); }, /* id */);
+		load_int (trackKbd., easing_menu.vkey,	"Track.Keyboard");
+		load_key (trackKbd., easing_menu.mkeys,	"Track.Keyboard");
 
 		load_bool(trackMouse., wheel,			"Track.Mouse");
 		load_bool(trackMouse., reverse_wheel,	"Track.Mouse");
@@ -1534,7 +1576,7 @@ inline bool delta_move_on_label(byte vkey)
 }
 
 // ESC キーで編集前に戻す / フォーカスを外す機能．
-inline bool escape_from_label(HWND edit_box)
+inline bool escape_from_label()
 {
 	if (!TrackLabel::is_focused()) [[unlikely]] return false;
 
@@ -1543,6 +1585,62 @@ inline bool escape_from_label(HWND edit_box)
 
 	if (TrackLabel::revert()) return true; // reverted the content, the focus stays.
 	return ::SetFocus(exedit.fp->hwnd) != nullptr; // no need to revert, the focus moves away.
+}
+
+// トラックバー変化方法の選択メニューを表示する機能．
+inline bool popup_easing_menu(byte vkey)
+{
+	if (!settings.trackKbd.easing_menu.match(vkey, curr_modkeys()) ||
+		key_pressed_any(VK_LWIN, VK_RWIN)) return false;
+
+	if (!TrackLabel::is_focused()) [[unlikely]] return false;
+
+	auto& info = TrackLabel::curr_info();
+	auto const idx = TrackLabel::find_info_index(&info);
+	if (idx >= Object::MAX_TRACK) return false;
+
+	// suppress notification sound by discarding certain messages.
+	discard_message(info.hwnd_label, settings.trackKbd.easing_menu.mkeys
+		.has_flags(modkeys::alt) ? WM_SYSCHAR : WM_CHAR);
+
+	// save the index so it the hook is enabled.
+	TrackLabel::easing_menu.activate(idx);
+
+	// move off the focus form this edit box,
+	// otherwise it would swallow the input of Enter key.
+	auto [l_pos, r_pos] = get_edit_selection(info.hwnd_label);
+	wchar_t last_text[TrackLabel::max_num_len];
+	::GetWindowTextW(info.hwnd_label, last_text, std::size(last_text));
+	::SetFocus(*exedit.hwnd_setting_dlg);
+
+	if (settings.trackKbd.easing_menu.mkeys.has_flags(modkeys::alt))
+		// as alt+clicking the button has a different functionality,
+		// make the key recognized as released.
+		TrackLabel::easing_menu.alt_state = set_key_state(VK_MENU, 0);
+	// send the button-click notification.
+	::SendMessageW(*exedit.hwnd_setting_dlg, WM_COMMAND,
+		(BN_CLICKED << 16) | TrackLabel::button_id(idx),
+		reinterpret_cast<LPARAM>(exedit.hwnd_track_buttons[idx]));
+
+	// rewind the focus and other states.
+	if ((::GetWindowLongW(info.hwnd_label, GWL_STYLE) & WS_DISABLED) == 0) {
+		::SetFocus(info.hwnd_label);
+		::SetWindowTextW(info.hwnd_label, last_text);
+		set_edit_selection(info.hwnd_label, l_pos, r_pos);
+
+		// turn out of the hooking state.
+		TrackLabel::easing_menu.deactivate();
+	}
+	else {
+		// if it's right side and disabled now, focus on left instead.
+		auto left_one = exedit.trackinfo_left[idx].hwnd_label;
+
+		TrackLabel::easing_menu.deactivate(); // no more hooks.
+		::SetFocus(left_one);
+		set_edit_selection_all(left_one);
+	}
+
+	return true;
 }
 
 // ホイールでトラックバーの数値をテキストラベル上で増減する機能．
@@ -1690,16 +1788,17 @@ LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
 		if (byte vkey = static_cast<byte>(wparam);
-			settings.trackKbd.updown &&
-			delta_move_on_label(vkey)) {
+			settings.trackKbd.updown && delta_move_on_label(vkey)) {
 			// prevent calling the default window procedure.
 			return 0;
 		}
-		else if (settings.trackKbd.escape && vkey == VK_ESCAPE && escape_from_label(hwnd)) {
+		else if (settings.trackKbd.escape && vkey == VK_ESCAPE && escape_from_label()) {
 			// needs to remove WM_CHAR messages to avoid the notification sound.
 			discard_message(hwnd, message == WM_KEYDOWN ? WM_CHAR : WM_SYSCHAR);
 			return 0;
 		}
+		else if (settings.trackKbd.easing_menu.is_enabled() && popup_easing_menu(vkey))
+			return 0;
 		break;
 	case WM_MOUSEMOVE:
 		if (settings.trackMouse.fixed_drag &&
@@ -1723,6 +1822,28 @@ LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
+}
+
+// トラックバー変化方法のメニューをショートカットキーで表示させたときの座標調整．
+BOOL WINAPI popup_easing_menu_hook(HMENU menu, UINT flags, int x, int y, int, HWND hwnd, RECT const*)
+{
+	if (TrackLabel::easing_menu.is_active()) {
+		auto const btn = exedit.hwnd_track_buttons[TrackLabel::easing_menu.idx];
+
+		// Alt の状態を差し戻す．
+		set_key_state(VK_MENU, TrackLabel::easing_menu.alt_state);
+
+		// メニューの位置をボタンの矩形に合わせて調整．
+		TPMPARAMS p{ .cbSize = sizeof(p) };
+		::GetWindowRect(btn, &p.rcExclude);
+
+		// メニュー表示．
+		return ::TrackPopupMenuEx(menu, flags | TPM_VERTICAL,
+			p.rcExclude.left, p.rcExclude.top, hwnd, &p);
+	}
+
+	// 条件を満たさない場合は未介入のデフォルト処理．
+	return ::TrackPopupMenuEx(menu, flags, x, y, hwnd, nullptr);
 }
 
 LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto data)
@@ -2049,6 +2170,14 @@ BOOL func_init(FilterPlugin* fp)
 		conflict_warning("filter_name.auf", "[FilterName]\nanim_eff_fmt=\"\"");
 	}
 
+	// トラックバー変化方法のメニューをショートカットキーで表示させたときの座標調整．
+	if (settings.trackKbd.easing_menu.is_enabled())
+		// ff 15 48 a3 ff 2f	call	dword ptr ds:[TrackPopupMenu]
+		// V
+		// e8 yy yy yy yy		call	yyyyyyyy
+		// 90					nop
+		memory::hook_api_call(exedit.call_easing_popup_menu, popup_easing_menu_hook);
+
 	// トラックバーの変化方法の調整．
 	if (settings.easings.linked_track_invert_shift)
 		// 0f 8c 87 00 00 00	jl
@@ -2151,7 +2280,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.63-beta1"
+#define PLUGIN_VERSION	"v1.70-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
