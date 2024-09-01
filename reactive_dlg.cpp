@@ -82,7 +82,7 @@ static_assert(sizeof(TrackInfo) == 40);
 
 inline constinit struct ExEdit092 {
 	FilterPlugin* fp;
-	constexpr static const char* info_exedit092 = "拡張編集(exedit) version 0.92 by ＫＥＮくん";
+	constexpr static char const* info_exedit092 = "拡張編集(exedit) version 0.92 by ＫＥＮくん";
 	bool init(FilterPlugin* this_fp)
 	{
 		if (fp != nullptr) return true;
@@ -193,7 +193,7 @@ namespace filter_id
 ////////////////////////////////
 struct Encodes {
 	template<UINT codepage = CP_UTF8>
-	static std::wstring to_wstring(const std::string_view& src) {
+	static std::wstring to_wstring(std::string_view const& src) {
 		if (src.length() == 0) return L"";
 
 		auto wlen = ::MultiByteToWideChar(codepage, 0, src.data(), src.length(), nullptr, 0);
@@ -209,7 +209,7 @@ struct Encodes {
 // Windows API 利用の補助関数．
 ////////////////////////////////
 template<int N>
-bool check_window_class(HWND hwnd, const wchar_t(&classname)[N])
+bool check_window_class(HWND hwnd, wchar_t const(&classname)[N])
 {
 	wchar_t buf[N + 1];
 	return ::GetClassNameW(hwnd, buf, N + 1) == N - 1
@@ -303,7 +303,7 @@ struct TextBox : SettingDlg {
 
 public:
 	// テキストボックスの TAB 文字サイズ．
-	static void set_tabstops(HWND hwnd, const auto& choose)
+	static void set_tabstops(HWND hwnd, auto const& choose)
 	{
 		auto kind = edit_box_kind(hwnd);
 		if (kind == kind::unspecified) return;
@@ -363,7 +363,7 @@ public:
 	// テキスト入力中にカーソルを隠す機能．
 	static inline constinit struct {
 	private:
-		static constexpr auto dist(const POINT& p1, const POINT& p2) {
+		static constexpr auto dist(POINT const& p1, POINT const& p2) {
 			// so-called L^\infty-distance.
 			return std::max(std::abs(p1.x - p2.x), std::abs(p1.y - p2.y));
 		}
@@ -373,8 +373,8 @@ public:
 	public:
 		bool is_hidden() const { return hide; }
 		void reset() { hide = false; }
-		void on_edit(const POINT& pt) { hide = true; pos = pt; }
-		void on_move(const POINT& pt) {
+		void on_edit(POINT const& pt) { hide = true; pos = pt; }
+		void on_move(POINT const& pt) {
 			constexpr int move_threshold = 8;
 			if (!hide || dist(pt, pos) <= move_threshold) return;
 			hide = false;
@@ -445,7 +445,7 @@ public:
 		constexpr int upper_pad = 0, lower_pad = 4;
 
 		if (!is_valid() || *exedit.SettingDialogObjectIndex < 0) return nullptr;
-		const auto track_n = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex].track_n;
+		auto const track_n = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex].track_n;
 
 		// determine whether the pointer is on the left/right or the middle gap.
 		bool left = true;
@@ -472,12 +472,12 @@ public:
 	static TrackInfo* first_trackinfo(bool forward)
 	{
 		if (!is_valid() || *exedit.SettingDialogObjectIndex < 0) return nullptr;
-		const auto& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
-		const auto track_n = obj.track_n;
+		auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
+		auto const track_n = obj.track_n;
 		int track_o = 0;
 
 		// needs re-ordering the indices if the final filter is of the certain type.
-		if (const auto& filter_last = obj.filter_param[obj.countFilters() - 1];
+		if (auto const& filter_last = obj.filter_param[obj.countFilters() - 1];
 			has_flag_or(exedit.loaded_filter_table[filter_last.id]->flag, Filter::Flag::Output))
 			track_o = filter_last.track_begin; // alter offset.
 
@@ -600,7 +600,7 @@ public:
 				handle = ::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(IDC_HAND));
 			return handle;
 		}
-		//HCURSOR get(const auto& info)
+		//HCURSOR get(auto const& info)
 		//{
 		//	if (handle == nullptr) {
 		//		if (info.file != nullptr) {
@@ -1210,7 +1210,7 @@ inline constinit struct Settings {
 		{
 			return keys_boost.has_flags() && keys >= keys_boost;
 		}
-		constexpr auto calc_rate(modkeys keys, const TrackInfo& info) const
+		constexpr auto calc_rate(modkeys keys, TrackInfo const& info) const
 		{
 			return (boost(keys) ? rate_boost : 1) * (decimal(keys) ? 1 : info.precision());
 		}
@@ -1326,7 +1326,7 @@ inline constinit struct Settings {
 			dropdownKbd.search || filterName.is_enabled();
 	}
 
-	void load(const char* ini_file)
+	void load(char const* ini_file)
 	{
 		auto read_raw = [&](auto def, char const* section, char const* key) {
 			return static_cast<decltype(def)>(
@@ -1430,7 +1430,7 @@ inline constinit struct Settings {
 
 // replacing a file extension when it's known.
 template<class T, size_t len_max, size_t len_old, size_t len_new>
-static void replace_tail(T(&dst)[len_max], size_t len, const T(&tail_old)[len_old], const T(&tail_new)[len_new])
+static void replace_tail(T(&dst)[len_max], size_t len, T const(&tail_old)[len_old], T const(&tail_new)[len_new])
 {
 	if (len < len_old || len - len_old + len_new > len_max) return;
 	std::memcpy(dst + len - len_old, tail_new, len_new * sizeof(T));
@@ -1460,7 +1460,7 @@ struct Menu {
 	static constexpr bool is_invalid(ID id) { return id >= Invalid; }
 
 	using enum ID;
-	static constexpr struct { ID id; const char* name; } Items[] = {
+	static constexpr struct { ID id; char const* name; } Items[] = {
 		{ TextFocusFwd,		"テキストにフォーカス移動" },
 		{ TextFocusBwd,		"テキストにフォーカス移動(逆順)" },
 		{ TrackFocusFwd,	"トラックバーにフォーカス移動" },
@@ -1644,7 +1644,7 @@ inline bool popup_easing_menu(byte vkey)
 }
 
 // ホイールでトラックバーの数値をテキストラベル上で増減する機能．
-inline bool wheel_on_track(const TrackInfo& info, short wheel, modkeys keys)
+inline bool wheel_on_track(TrackInfo const& info, short wheel, modkeys keys)
 {
 	// determine the delta value taking the modifier keys in account.
 	int delta = (wheel > 0) ^ settings.trackMouse.reverse_wheel ? +1 : -1;
@@ -1860,7 +1860,7 @@ LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 					// hook for shortcut keys to move the focus out of this edit box.
 					::SetWindowSubclass(ctrl, text_box_hook, TextBox::hook_uid(), 0);
 
-				else if (const TrackInfo* info;
+				else if (TrackInfo const* info;
 					(settings.trackKbd.is_enabled() || settings.trackMouse.fixed_drag) &&
 					(info = TrackLabel::find_trackinfo(wparam & 0xffff, ctrl)) != nullptr) {
 					// hook for manipulating values by arrow keys.

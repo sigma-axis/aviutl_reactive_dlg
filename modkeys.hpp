@@ -31,11 +31,11 @@ struct modkeys {
 
 	constexpr modkeys() : val{} {}
 	constexpr modkeys(key val) : val{ val } {}
-	constexpr operator const key& () const { return val; }
+	constexpr operator key const& () const { return val; }
 	constexpr operator key& () { return val; }
 
 	constexpr modkeys(bool ctrl, bool shift, bool alt) : val{ from_bools(ctrl, shift, alt) } {}
-	constexpr modkeys(const char* str, modkeys def) : val{ (parse(str, def), def) } {}
+	constexpr modkeys(char const* str, modkeys def) : val{ (parse(str, def), def) } {}
 
 	// flag testing functions.
 	template<std::convertible_to<modkeys>... TArgs>
@@ -54,17 +54,17 @@ struct modkeys {
 
 	// string convertions.
 	/// <param name="ret">keeps original value unless true is returned.</param>
-	static constexpr bool parse(const char* str, modkeys& ret);
+	static constexpr bool parse(char const* str, modkeys& ret);
 
 	// returns canonical names for each state of flags.
-	constexpr const char* canon_name() const;
+	constexpr char const* canon_name() const;
 
 private:
 	key val = none;
 	static constexpr key from_bools(bool ctrl, bool shift, bool alt);
 
 	// parsing from strings.
-	static constexpr bool parse_one(const char* str, key& ret)
+	static constexpr bool parse_one(char const* str, key& ret)
 	{
 		constexpr auto tolower = [](char c) -> char {
 			// https://blog.yimmo.org/posts/faster-tolower-in-c.html
@@ -73,7 +73,7 @@ private:
 			return c ^ ((((0x40 - c) ^ (0x5a - c)) >> 3) & 0x20);
 		};
 		// case-insensitve truncated string comparison.
-		constexpr auto comp = []<size_t N>(const char* s1, const char(&s2)[N]) {
+		constexpr auto comp = []<size_t N>(char const* s1, char const(&s2)[N]) {
 			for (size_t i = 0; i < N - 1; i++) {
 				if (tolower(s1[i]) != s2[i]) return false;
 			}
@@ -129,7 +129,7 @@ inline constexpr modkeys::key modkeys::from_bools(bool ctrl, bool shift, bool al
 	return ret;
 }
 
-inline constexpr bool modkeys::parse(const char* str, modkeys& ret)
+inline constexpr bool modkeys::parse(char const* str, modkeys& ret)
 {
 	if (str == nullptr) return false;
 
@@ -143,7 +143,7 @@ inline constexpr bool modkeys::parse(const char* str, modkeys& ret)
 	return true;
 }
 
-inline constexpr const char* modkeys::canon_name() const
+inline constexpr char const* modkeys::canon_name() const
 {
 	switch (val) {
 	case none: return "none";
