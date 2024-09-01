@@ -730,7 +730,7 @@ private:
 				return { basic_cam_eff_names.get<anim_exdata>(leader, filter_param), filter_id::cam_eff };
 
 			case filter_id::scn_chg:
-				return { basic_scn_change_names.get<anim_exdata>(leader, filter_param), filter_id::scn_chg };
+				return { basic_scn_change_names.get<scene_exdata>(leader, filter_param), filter_id::scn_chg };
 			}
 		}
 		return { nullptr, filter_id::id{-1} };
