@@ -2167,7 +2167,19 @@ BOOL func_init(FilterPlugin* fp)
 	}
 	if (settings.filterName.is_enabled() && ::GetModuleHandleW(L"filter_name.auf") != nullptr) {
 		settings.filterName.anim_eff_fmt.reset();
-		conflict_warning("filter_name.auf", "[FilterName]\nanim_eff_fmt=\"\"");
+		settings.filterName.cust_std_fmt.reset();
+		settings.filterName.cust_ext_fmt.reset();
+		settings.filterName.cust_particle_fmt.reset();
+		settings.filterName.cam_eff_fmt.reset();
+		settings.filterName.scn_change_fmt.reset();
+		conflict_warning("filter_name.auf",
+			"[FilterName]\n"
+			"anim_eff_fmt=\"\"\n"
+			"cust_std_fmt=\"\"\n"
+			"cust_ext_fmt=\"\"\n"
+			"cust_particle_fmt=\"\"\n"
+			"cam_eff_fmt=\"\"\n"
+			"scn_change_fmt=\"\"");
 	}
 
 	// トラックバー変化方法のメニューをショートカットキーで表示させたときの座標調整．
@@ -2280,7 +2292,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.70"
+#define PLUGIN_VERSION	"v1.71-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
