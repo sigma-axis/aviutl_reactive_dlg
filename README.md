@@ -99,7 +99,7 @@
 
 - AviUtl 1.10 + 拡張編集 0.92
 
-  http://spring-fragrance.mints.ne.jp/aviutl
+  https://spring-fragrance.mints.ne.jp/aviutl
   - 拡張編集 0.93rc1 等の他バージョンでは動作しません．
 
 - Visual C++ 再頒布可能パッケージ（\[2015/2017/2019/2022\] の x86 対応版が必要）
@@ -649,7 +649,7 @@ tip_text_color=-1
 
 - [テキスト入力時のプレビュー画面一括更新の機能](#テキスト入力ボックスでのime入力したときの画面更新を一括にする機能)は，アイデア，実装方法を含めて hebiiro 様の[エディットボックス最適化プラグイン](https://github.com/hebiiro/AviUtl-Plugin-OptimizeEditBox)を参考にさせていただきました．このような場で恐縮ですが大変便利なプラグインの作成・公開に感謝申し上げます．
 
-- [トラックバー横の :arrow_backward: :arrow_forward: をクリックしたときの増減量を修飾キーで調整する機能](#トラックバー横の-arrow_backward-arrow_forward-ボタンの増減量を調整)は，アイデア，実装方法を含めて nanypoco 様の [updown プラグイン](https://github.com/nanypoco/updown)を参考にさせていただきました．この場ようなで恐縮ですが大変便利なプラグインの作成・公開に感謝申し上げます．
+- [トラックバー横の :arrow_backward: :arrow_forward: をクリックしたときの増減量を修飾キーで調整する機能](#トラックバー横の-arrow_backward-arrow_forward-ボタンの増減量を調整)は，アイデア，実装方法を含めて nanypoco 様の [updown プラグイン](https://github.com/nanypoco/updown)を参考にさせていただきました．このような場で恐縮ですが大変便利なプラグインの作成・公開に感謝申し上げます．
 
 - [アニメーション効果のスクリプト名を右上のチェックボックス横に表示する機能](#アニメーション効果のスクリプト名を右上のチェックボックス横に表示する機能)は，[兎](https://twitter.com/rabb_et)様が Discord の [AviUtl知識共有](https://t.co/PRrPkEHI3w)サーバーで提案し，[蛇色](https://github.com/hebiiro)様が[実装](https://github.com/hebiiro/aviutl.filter_name.auf)したものを，蛇色様の提案でこのプラグインに移植したものです．このお二方に対して深い感謝を申し上げます．
 
@@ -871,7 +871,7 @@ SOFTWARE.
 #  連絡・バグ報告
 
 - GitHub: https://github.com/sigma-axis
-- Twitter: https://twitter.com/sigma_axis
+- Twitter: https://x.com/sigma_axis
 - nicovideo: https://www.nicovideo.jp/user/51492481
 - Misskey.io: https://misskey.io/@sigma_axis
 - Bluesky: https://bsky.app/profile/sigma-axis.bsky.social
