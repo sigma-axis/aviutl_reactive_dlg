@@ -533,6 +533,18 @@ public:
 
 	static bool add_number(int delta, bool clamp)
 	{
+		return modify_number([&](double val) {
+			return val + static_cast<double>(delta) / info->precision();
+		}, clamp);
+	}
+	static bool mult_number(double factor, bool clamp)
+	{
+		return modify_number([&](double val) {
+			return val * factor;
+		}, clamp);
+	}
+	static bool modify_number(auto&& modify, bool clamp)
+	{
 		wchar_t text[std::size(last_text)];
 		auto len = ::GetWindowTextW(info->hwnd_label, text, std::size(text));
 		if (len >= static_cast<int>(std::size(text)) - 1) return false;
@@ -542,8 +554,8 @@ public:
 		if (wchar_t* e; (val = std::wcstod(text, &e)) == HUGE_VAL ||
 			(*e != L'\0' && *e != L' ')) return false;
 
-		auto prec = info->precision();
-		val += static_cast<double>(delta) / prec;
+		// apply the modification.
+		val = modify(val);
 
 		// doesn't clamp val into the min/max range by default,
 		// as this is an edit control so the user may want to edit it afterward.
@@ -551,7 +563,7 @@ public:
 
 		// get the caret position, relative to the end of the text.
 		auto caret = len - get_edit_selection(info->hwnd_label).first;
-		if (prec > 1) {
+		if (auto prec = info->precision(); prec > 1) {
 			int dec_places = static_cast<int>(0.5 + std::log10(prec));
 
 			// values have fraction part.
@@ -1254,6 +1266,9 @@ inline constinit struct Settings {
 	struct : modkey_set {
 		bool updown, updown_clamp, escape;
 		shortcut_key easing_menu;
+		struct : shortcut_key {
+			bool clamp;
+		} negate;
 		constexpr bool is_enabled() const { return updown || escape || easing_menu.is_enabled(); }
 		constexpr bool no_wrong_keys(modkeys keys) const
 		{
@@ -1261,7 +1276,7 @@ inline constinit struct Settings {
 		}
 	} trackKbd{
 		{ modkeys::shift, modkeys::alt, false, 10, },
-		true, false, true, { 0, modkeys::none },
+		true, false, true, { 0, modkeys::none }, { 0, modkeys::none, false },
 	};
 
 	struct : modkey_set {
@@ -1377,6 +1392,9 @@ inline constinit struct Settings {
 			[](auto x) { return std::clamp(x, modkey_set::min_rate_boost, modkey_set::max_rate_boost); }, /* id */);
 		load_int (trackKbd., easing_menu.vkey,	"Track.Keyboard");
 		load_key (trackKbd., easing_menu.mkeys,	"Track.Keyboard");
+		load_int (trackKbd., negate.vkey,		"Track.Keyboard");
+		load_key (trackKbd., negate.mkeys,		"Track.Keyboard");
+		load_bool(trackKbd., negate.clamp,		"Track.Keyboard");
 
 		load_bool(trackMouse., wheel,			"Track.Mouse");
 		load_bool(trackMouse., reverse_wheel,	"Track.Mouse");
@@ -1575,6 +1593,21 @@ inline bool delta_move_on_label(byte vkey)
 	return true;
 }
 
+// 指定キーでトラックバーの数値を符号反転する機能．
+inline bool flip_on_label(byte vkey)
+{
+	if (!settings.trackKbd.negate.match(vkey, curr_modkeys()) ||
+		key_pressed_any(VK_LWIN, VK_RWIN)) return false;
+
+	if (!TrackLabel::is_focused()) [[unlikely]] return false;
+
+	if (!TrackLabel::mult_number(-1, settings.trackKbd.negate.clamp)) {
+		// in case of text errors.
+		return false;
+	}
+	return true;
+}
+
 // ESC キーで編集前に戻す / フォーカスを外す機能．
 inline bool escape_from_label()
 {
@@ -1702,7 +1735,9 @@ LRESULT CALLBACK text_box_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
 			// by discarding input messages sent to this edit box.
 			// (for TAB key, takes effect only when ctrl is not pressed.)
 			// for WM_SYSKEYDOWN, it prevents notification sound from playing.
-			discard_message(hwnd, message == WM_KEYDOWN ? WM_CHAR : WM_SYSCHAR);
+			constexpr int diff = WM_CHAR - WM_KEYDOWN;
+			static_assert(diff == WM_SYSCHAR - WM_SYSKEYDOWN);
+			discard_message(hwnd, message + diff);
 
 			// shouldn't pass to ::DefSubclassProc(). (for TAB key, takes effect only when ctrl is pressed.)
 			return 0;
@@ -1792,9 +1827,12 @@ LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 			// prevent calling the default window procedure.
 			return 0;
 		}
-		else if (settings.trackKbd.escape && vkey == VK_ESCAPE && escape_from_label()) {
-			// needs to remove WM_CHAR messages to avoid the notification sound.
-			discard_message(hwnd, message == WM_KEYDOWN ? WM_CHAR : WM_SYSCHAR);
+		else if ((settings.trackKbd.escape && vkey == VK_ESCAPE && escape_from_label())
+			|| (settings.trackKbd.negate.is_enabled() && flip_on_label(vkey))) {
+			// needs to remove WM_CHAR messages to avoid notification sounds or unnecessary inputs.
+			constexpr int diff = WM_CHAR - WM_KEYDOWN;
+			static_assert(diff == WM_SYSCHAR - WM_SYSKEYDOWN);
+			discard_message(hwnd, message + diff);
 			return 0;
 		}
 		else if (settings.trackKbd.easing_menu.is_enabled() && popup_easing_menu(vkey))
@@ -2292,7 +2330,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.71"
+#define PLUGIN_VERSION	"v1.80-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
