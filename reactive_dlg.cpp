@@ -1272,7 +1272,7 @@ inline constinit struct Settings {
 		struct : shortcut_key {
 			bool clamp;
 		} negate;
-		constexpr bool is_enabled() const { return updown || escape || easing_menu.is_enabled(); }
+		constexpr bool is_enabled() const { return updown || escape || easing_menu.is_enabled() || negate.is_enabled(); }
 		constexpr bool no_wrong_keys(modkeys keys) const
 		{
 			return keys <= (keys_decimal | keys_boost);
@@ -2333,7 +2333,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.80"
+#define PLUGIN_VERSION	"v1.81-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
