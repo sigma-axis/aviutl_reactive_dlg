@@ -1114,7 +1114,8 @@ public:
 		case WM_RBUTTONUP:
 		{
 			MSG msg{ .hwnd = hwnd, .message = message, .wParam = wparam, .lParam = lparam };
-			::SendMessageW(tooltip, TTM_RELAYEVENT, 0, reinterpret_cast<LPARAM>(&msg));
+			::SendMessageW(tooltip, TTM_RELAYEVENT,
+				message == WM_MOUSEMOVE ? ::GetMessageExtraInfo() : 0, reinterpret_cast<LPARAM>(&msg));
 			break;
 		}
 
@@ -1174,11 +1175,11 @@ public:
 			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 		// associate the tooltip with each trackbar button.
-		TTTOOLINFOA ti{
-			.cbSize = sizeof(ti),
+		TTTOOLINFOW ti{
+			.cbSize = TTTOOLINFOW_V1_SIZE,
 			.uFlags = TTF_IDISHWND | TTF_TRANSPARENT,
 			.hinst = exedit.fp->hinst_parent,
-			.lpszText = LPSTR_TEXTCALLBACKA,
+			.lpszText = LPSTR_TEXTCALLBACKW,
 		};
 		for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++) {
 			HWND tgt = exedit.hwnd_track_buttons[i];
@@ -1186,9 +1187,7 @@ public:
 			ti.hwnd = tgt;
 			ti.uId = reinterpret_cast<uintptr_t>(tgt);
 
-			// note that the only A-variant can successfully register
-			// if dark-mode isn't applied (i.e. TTM_ADDTOOLW would fail otherwise).
-			::SendMessageW(tooltip, TTM_ADDTOOLA, 0, reinterpret_cast<LPARAM>(&ti));
+			::SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
 		}
 
 		// required for multi-line tooltips.
@@ -1704,7 +1703,7 @@ inline bool wheel_on_track(TrackInfo const& info, short wheel, modkeys keys)
 }
 
 // スピンコントロールの増減量を修飾キーで調整する機能．
-inline void modify_updown_delta(const TrackInfo& info, int& delta)
+inline void modify_updown_delta(TrackInfo const& info, int& delta)
 {
 	// combinations of modifier keys that don't make sense shall not take action.
 	auto keys = curr_modkeys();
@@ -2337,7 +2336,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.82-beta1"
+#define PLUGIN_VERSION	"v1.82-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
