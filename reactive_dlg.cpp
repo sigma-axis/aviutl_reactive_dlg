@@ -1128,14 +1128,22 @@ public:
 					auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
 					auto const& mode = obj.track_mode[idx];
 					if (mode.num == 0) break; // 移動無し
+					auto const param = obj.track_param[idx];
 
+					// cached previous states.
+					static constinit Object::TrackMode prev_mode = { -1, -1 };
+					static constinit int32_t prev_param = 0;
 				#ifndef _DEBUG
 					constinit // somehow it causes an error for debug build.
 				#endif
 					static std::string curr_tooltip_text{};
 
 					// store the string and return it.
-					curr_tooltip_text = format_tooltip(mode, obj.track_param[idx]);
+					if (std::bit_cast<int32_t>(prev_mode) != std::bit_cast<int32_t>(mode) ||
+						prev_param != param) {
+						prev_mode = mode; prev_param = param;
+						curr_tooltip_text = format_tooltip(mode, param);
+					}
 					reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = curr_tooltip_text.data();
 					break;
 				}
@@ -2336,7 +2344,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.82-beta2"
+#define PLUGIN_VERSION	"v1.82-beta3"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
