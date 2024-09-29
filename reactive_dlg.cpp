@@ -561,18 +561,16 @@ public:
 		// as this is an edit control so the user may want to edit it afterward.
 		if (clamp) val = std::clamp(val, info->value_min(), info->value_max());
 
-		// get the caret position, relative to the end of the text.
-		auto [car_l, car_r] = get_edit_selection(info->hwnd_label);
-		car_l = len - car_l; car_r = len - car_r;
+		// track the position of the decimal point.
+		int dec_diff = len;
+
 		if (auto prec = info->precision(); prec > 1) {
 			int dec_places = static_cast<int>(0.5 + std::log10(prec));
 
 			// values have fraction part.
-			// preserve the caret position relative to the decimal point.
-			if (auto pt = std::wcschr(text, L'.'); pt != nullptr) {
-				car_l -= (text + len) - pt; car_r -= (text + len) - pt;
-			}
-			car_l += 1 + dec_places; car_r += 1 + dec_places;
+			if (auto pt = std::wcschr(text, L'.'); pt != nullptr)
+				dec_diff = pt - text;
+			dec_diff += 1 + dec_places;
 
 			len = std::swprintf(text, std::size(text), L"%.*f", dec_places, val);
 		}
@@ -582,12 +580,18 @@ public:
 		}
 		if (len <= 0) return false;
 
+		dec_diff -= len;
+
+		// get the current selection, and adjust it
+		// so the relative position to the decimal point is preserved.
+		auto [sel_l, sel_r] = get_edit_selection(info->hwnd_label);
+		sel_l -= dec_diff; sel_r -= dec_diff;
+
 		// apply those changes.
 		::SetWindowTextW(info->hwnd_label, text);
 
-		// restore the caret position preserving the relative position to the decimal point.
-		car_l = std::clamp(len - car_l, 0, len); car_r = std::clamp(len - car_r, 0, len);
-		set_edit_selection(info->hwnd_label, car_l, car_r);
+		// restore the selection.
+		set_edit_selection(info->hwnd_label, std::clamp(sel_l, 0, len), std::clamp(sel_r, 0, len));
 
 		return true;
 	}
@@ -2333,7 +2337,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.81"
+#define PLUGIN_VERSION	"v1.82-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
