@@ -16,6 +16,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <cstring>
 #include <string>
 #include <vector>
+#include <span>
 #include <map>
 #include <memory>
 #include <bit>
@@ -100,6 +101,7 @@ inline constinit struct ExEdit092 {
 	}
 
 	Object**	ObjectArray_ptr;			// 0x1e0fa4
+	int32_t*	NextObjectIdxArray;			// 0x1592d8
 	int32_t*	SettingDialogObjectIndex;	// 0x177a10
 	HWND*		hwnd_setting_dlg;			// 0x1539c8
 	//int32_t*	is_playing;					// 0x1a52ec; 0: editing, 1: playing.
@@ -139,6 +141,7 @@ private:
 		auto pick_addr = [exedit_base=reinterpret_cast<uintptr_t>(fp->dll_hinst)]
 			<class T>(T& target, ptrdiff_t offset) { target = std::bit_cast<T>(exedit_base + offset); };
 		pick_addr(ObjectArray_ptr,			0x1e0fa4);
+		pick_addr(NextObjectIdxArray,		0x1592d8);
 		pick_addr(SettingDialogObjectIndex,	0x177a10);
 		pick_addr(hwnd_setting_dlg,			0x1539c8);
 		//pick_addr(is_playing,				0x1a52ec);
@@ -1056,41 +1059,138 @@ private:
 			flag_loaded		= 1 << 7;
 	};
 
-	// formatting the tooltip text according to the track mode.
-	static std::string format_tooltip(ExEdit::Object::TrackMode const& mode, int32_t param)
+	static auto easing_name_spec(ExEdit::Object::TrackMode const& mode)
 	{
 		size_t const basic_idx = mode.num & 0x0f;
-		bool const acc = (mode.num & mode.isAccelerate) != 0,
-			dec = (mode.num & mode.isDecelerate) != 0,
-			is_scr = basic_idx == mode.isScript;
+		bool const is_scr = basic_idx == mode.isScript;
 
 		// name of the easing.
-		std::string ret{ is_scr ?
+		std::string_view ret1 = is_scr ?
 			script_names[mode.script_idx].name :
-			basic_track_mode_names[basic_idx] };
+			basic_track_mode_names[basic_idx];
 
 		// identify its specification, especially whether it accepts a parameter.
-		easing_spec spec = is_scr ? easing_spec{ exedit.easing_specs_script[mode.script_idx] } :
+		easing_spec ret2 = is_scr ? easing_spec{ exedit.easing_specs_script[mode.script_idx] } :
 			easing_spec{ exedit.easing_specs_builtin[basic_idx] };
-		if (!spec.loaded) {
+		if (!ret2.loaded) {
 			// script wasn't loaded yet. try after loading.
 			exedit.load_easing_spec(mode.script_idx, 0, 0);
-			spec = { exedit.easing_specs_script[mode.script_idx] };
+			ret2 = { exedit.easing_specs_script[mode.script_idx] };
 		}
+
+		return std::pair{ ret1, ret2 };
+	}
+
+	// formatting a string that describes to the track mode.
+	static std::wstring format_easing(ExEdit::Object::TrackMode const& mode, int32_t param)
+	{
+		// get name and specification.
+		auto [name, spec] = easing_name_spec(mode);
+		auto ret = Encodes::to_wstring<CP_ACP>(name);
 
 		// integral parameter.
 		if (spec.param)
-			ret += "\nパラメタ: " + std::to_string(param);
+			ret += L"\nパラメタ: " + std::to_wstring(param);
 
 		// two more booleans.
-		if (acc || dec) {
-			ret += spec.param ? ", " : "\n";
-			if (acc) ret += "+加速 ";
-			if (dec) ret += "+減速 ";
+		if (bool const acc = (mode.num & mode.isAccelerate) != 0,
+			dec = (mode.num & mode.isDecelerate) != 0;
+			acc || dec) {
+			ret += spec.param ? L", " : L"\n";
+			if (acc) ret += L"+加速 ";
+			if (dec) ret += L"+減速 ";
 			ret.pop_back();
 		}
 
 		return ret;
+	}
+
+	// formatting a string that lists up the value transition.
+	static std::wstring format_value_list(std::span<int> window, size_t idx_view_sec, int denom, int max_head, int max_tail, bool zigzag)
+	{
+		// symbolic tokens.
+		constexpr auto arrow = [](int left, int right, bool zigzag) {
+			if (zigzag) {
+				if (left < right) return L'\u2197'; // L'↗', North East Arrow.
+				if (left > right) return L'\u2198'; // L'↘', South East Arrow.
+			}
+			return L'\u2192'; // L'→', Rightwards Arrow.
+		};
+		constexpr wchar_t overflow = L'\u2026'; // L'…', Horizontal Ellipsis.
+		constexpr size_t max_trackvalue_len = 8; // assume "-999999.9" is the longest.
+
+		// helper lambda.
+		auto fmt_val = [n = static_cast<int>(0.5 + std::log10(denom)),
+			f = 1.0 / denom](int numer) {
+			wchar_t buf[16];
+			return std::wstring{ buf, static_cast<size_t>(n > 0 ?
+				::swprintf_s(buf, L"%.*f", n, numer * f) :
+				::swprintf_s(buf, L"%d", numer)) };
+		};
+
+		// handle trivial cases.
+		if (window.empty()) return L"";
+		if (window.size() == 1) return fmt_val(window[0]);
+
+		// limit to the span.
+		bool over_L = max_head >= 0 && idx_view_sec > static_cast<size_t>(max_head),
+			over_R = max_tail >= 0 && idx_view_sec + 2 + max_tail < window.size();
+		if (over_L) { window = window.subspan(idx_view_sec - max_head); idx_view_sec = max_head; }
+		if (over_R) { window = window.subspan(0, idx_view_sec + 2 + max_tail); }
+
+		std::wstring ret{}; ret.reserve((max_trackvalue_len + 1) * window.size() + 3);
+		int prev = window[0];
+
+		// compose heads.
+		if (over_L) ret = overflow; // heading "...".
+		for (auto val : window.subspan(1, idx_view_sec)) {
+			ret += fmt_val(prev);
+			ret += arrow(prev, val, zigzag);
+			prev = val;
+		}
+
+		// compose current section.
+		ret += L"[";
+		{
+			ret += fmt_val(prev);
+			auto val = window[idx_view_sec + 1];
+			ret += arrow(prev, val, zigzag);
+			ret += fmt_val(val);
+			prev = val;
+		}
+		ret += L"]";
+
+		// compose tail.
+		for (auto val : window.subspan(idx_view_sec + 2)) {
+			ret += arrow(prev, val, zigzag);
+			ret += fmt_val(val);
+			prev = val;
+		}
+		if (over_R) ret += overflow; // tail "...".
+
+		return ret;
+	}
+	static std::pair<std::vector<int>, size_t> collect_value_list(ExEdit::Object const& obj, size_t idx_track)
+	{
+		auto const& mode = obj.track_mode[idx_track];
+		if (mode.num == 0) // 移動無し
+			return { {obj.track_value_left[idx_track]}, ~0u };
+
+		if (obj.index_midpt_leader < 0 || easing_name_spec(mode).second.twopoints)
+			// 中間点なし or 中間点無視
+			return { { obj.track_value_left[idx_track], obj.track_value_right[idx_track] }, 0 };
+
+		// scan over the chain of objects and collect values.
+		std::vector<int> list{};
+		size_t idx_view_sec = std::numeric_limits<size_t>::max();
+		for (auto i = obj.index_midpt_leader; i >= 0; i = exedit.NextObjectIdxArray[i]) {
+			auto* curr = &(*exedit.ObjectArray_ptr)[i];
+			if (list.size() < idx_view_sec) list.push_back(curr->track_value_left[idx_track]);
+			if (curr == &obj) idx_view_sec = list.size() - 1;
+			if (list.size() > idx_view_sec) list.push_back(curr->track_value_right[idx_track]);
+		}
+
+		return { list, idx_view_sec };
 	}
 
 	static inline constinit HWND tooltip = nullptr;
@@ -1098,10 +1198,10 @@ private:
 public:
 	// should be called when each trackbar button recieves messages,
 	// and handles/updates tooltip states.
-	static void relay_tooltip_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam,
-		size_t idx, int32_t text_color)
+	static std::optional<LRESULT> relay_tooltip_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam,
+		size_t idx, bool show_mode, int num_vals_L, int num_vals_R, bool vals_zigzag, int32_t text_color)
 	{
-		if (tooltip == nullptr || *exedit.SettingDialogObjectIndex < 0) return;
+		if (tooltip == nullptr || *exedit.SettingDialogObjectIndex < 0) return std::nullopt;
 
 		switch (message) {
 		case WM_LBUTTONDOWN:
@@ -1121,6 +1221,13 @@ public:
 
 		case WM_NOTIFY:
 			if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == tooltip) {
+			#ifndef _DEBUG
+				constinit // somehow it causes an error for debug build.
+			#endif
+				static struct {
+					std::wstring easing, values;
+					int w, h, h2;
+				} content{};
 				switch (hdr->code) {
 				case TTN_GETDISPINFOA:
 				{
@@ -1128,41 +1235,84 @@ public:
 					auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
 					auto const& mode = obj.track_mode[idx];
 					if (mode.num == 0) break; // 移動無し
-					auto const param = obj.track_param[idx];
-
-					// cached previous states.
-					static constinit Object::TrackMode prev_mode = { -1, -1 };
-					static constinit int32_t prev_param = 0;
-				#ifndef _DEBUG
-					constinit // somehow it causes an error for debug build.
-				#endif
-					static std::string curr_tooltip_text{};
-
-					// store the string and return it.
-					if (std::bit_cast<int32_t>(prev_mode) != std::bit_cast<int32_t>(mode) ||
-						prev_param != param) {
-						prev_mode = mode; prev_param = param;
-						curr_tooltip_text = format_tooltip(mode, param);
-					}
-					reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = curr_tooltip_text.data();
+					if (show_mode ||
+						((num_vals_L != 0 || num_vals_R != 0) &&
+							easing_name_spec(mode).second.twopoints))
+						reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = const_cast<char*>(" ");
 					break;
+				}
+				case TTN_SHOW:
+				{
+					// adjust the tooltip size to fit with content.w x content.h.
+					RECT rc;
+					::GetWindowRect(tooltip, &rc);
+					::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
+					rc.right = rc.left + content.w;
+					rc.bottom = rc.top + content.h;
+					::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
+					::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
+						rc.right - rc.left, rc.bottom - rc.top,
+						SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+					return TRUE;
 				}
 
 				case NM_CUSTOMDRAW:
 				{
-					// change the text color if specified.
-					if (text_color < 0) break;
-
+					constexpr int gap_h = 4;
+					constexpr UINT draw_text_options = DT_NOCLIP | DT_HIDEPREFIX;
 					auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
-					if ((dhdr->nmcd.dwDrawStage & CDDS_PREPAINT) != 0)
-						::SetTextColor(dhdr->nmcd.hdc,
-							(std::rotl<uint32_t>(text_color, 16) & 0x00ff00ff) | (text_color & 0x0000ff00));
+					if (::IsWindowVisible(tooltip) == FALSE) {
+						// prepare the text.
+
+						auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
+						auto const& mode = obj.track_mode[idx];
+
+						if (show_mode) content.easing = format_easing(mode, obj.track_param[idx]);
+						if (num_vals_L != 0 || num_vals_R != 0) {
+							if (obj.index_midpt_leader < 0 || // no mid-points.
+								mode.num == 0 || // static value.
+								easing_name_spec(mode).second.twopoints)
+								content.values = L"";
+							else {
+								auto [list, idx_view_sec] = collect_value_list(obj, idx);
+								content.values = format_value_list(list, idx_view_sec,
+									exedit.trackinfo_left[idx].denominator(), num_vals_L, num_vals_R, vals_zigzag);
+							}
+						}
+
+						// measure these text and determine the size.
+						RECT rc1{}, rc2{};
+						if (!content.easing.empty())
+							::DrawTextW(dhdr->nmcd.hdc, content.easing.c_str(), content.easing.size(), &rc1, DT_CALCRECT | draw_text_options);
+						if (!content.values.empty())
+							::DrawTextW(dhdr->nmcd.hdc, content.values.c_str(), content.values.size(), &rc2, DT_CALCRECT | draw_text_options);
+						content.w = std::max(rc1.right - rc1.left, rc2.right - rc2.left);
+						content.h2 = (rc1.bottom - rc1.top) + gap_h;
+						content.h = content.h2 + (rc2.bottom - rc2.top);
+					}
+					else if (dhdr->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYPOSTPAINT;
+					else {
+						// change the text color if specified.
+						if (text_color >= 0)
+							::SetTextColor(dhdr->nmcd.hdc,
+								(std::rotl<uint32_t>(text_color, 16) & 0x00ff00ff) | (text_color & 0x0000ff00));
+
+						// actual drawing, using content.easing and content.values.
+						RECT rc{ dhdr->nmcd.rc };
+						if (!content.easing.empty())
+							::DrawTextW(dhdr->nmcd.hdc, content.easing.c_str(), content.easing.size(), &rc, draw_text_options);
+						if (!content.values.empty()) {
+							rc.top = content.h2;
+							::DrawTextW(dhdr->nmcd.hdc, content.values.c_str(), content.values.size(), &rc, draw_text_options);
+						}
+					}
 					break;
 				}
 				}
 			}
 			break;
 		}
+		return std::nullopt;
 	}
 
 	// creates a tooltip and associates it with relevant buttons.
@@ -1197,9 +1347,6 @@ public:
 
 			::SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
 		}
-
-		// required for multi-line tooltips.
-		::SendMessageW(tooltip, TTM_SETMAXTIPWIDTH, 0, (1 << 15) - 1);
 
 		// settings of delay time for the tooltip.
 		::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_INITIAL,	0xffff & delay);
@@ -1340,13 +1487,17 @@ inline constinit struct Settings {
 	} filterName{ nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 
 	struct {
-		bool linked_track_invert_shift, wheel_click, tooltip, tip_anim;
+		bool linked_track_invert_shift, wheel_click, tooltip_mode, tooltip_values_zigzag, tip_anim;
+		int16_t tooltip_values_left, tooltip_values_right;
 		uint16_t tip_delay, tip_duration;
 		int32_t tip_text_color; // 0xrrggbb or < 0 (not spcified).
 
 		constexpr static uint16_t min_time = 0, max_time = 60'000;
-		bool is_enabled() const { return wheel_click || tooltip; };
-	} easings{ false, true, false, true, 0, 10'000, -1 };
+		bool is_enabled() const { return wheel_click || is_tooltip_enabled(); };
+		bool is_tooltip_enabled() const {
+			return tooltip_mode || tooltip_values_left != 0 || tooltip_values_right != 0;
+		}
+	} easings{ false, true, true, true, true, 5, 5, 0, 10'000, -1 };
 
 	constexpr bool hooks_dialog() const
 	{
@@ -1366,8 +1517,8 @@ inline constinit struct Settings {
 			::GetPrivateProfileStringA(section, key, def.canon_name(), str, std::size(str), ini_file);
 			return modkeys{ str, def };
 		};
-		auto read_string = [&]<size_t max_len>(char8_t const* def, char const* section, char const* key, char8_t const* nil) {
-			char str[max_len + 1];
+		auto read_string = [&](char8_t const* def, char const* section, char const* key, char8_t const* nil, auto max_len) {
+			char str[decltype(max_len)::value + 1];
 			::GetPrivateProfileStringA(section, key, reinterpret_cast<char const*>(def), str, std::size(str), ini_file);
 			if (std::strcmp(str, reinterpret_cast<char const*>(nil)) == 0)
 				return std::unique_ptr<std::wstring>{ nullptr };
@@ -1378,7 +1529,7 @@ inline constinit struct Settings {
 	#define load_bool(head, tgt, section)	load_gen(head, tgt, section, \
 				[](auto y) { return y != 0; }, [](auto x) { return x ? 1 : 0; })
 	#define load_key(head, tgt, section)	head##tgt = read_modkey(head##tgt, section, #tgt)
-	#define load_str0(head, tgt, section, def, max, nil)	head##tgt = read_string.operator()<max>(def, section, #tgt, nil)
+	#define load_str0(head, tgt, section, def, max, nil)	head##tgt = read_string(def, section, #tgt, nil, std::integral_constant<size_t, max>{})
 	#define load_str(head, tgt, section, def, max)	load_str0(head, tgt, section, def, max, def)
 
 		load_int (textFocus., forward.vkey,		"TextBox.Focus");
@@ -1438,14 +1589,17 @@ inline constinit struct Settings {
 		load_str0(filterName., scn_change_fmt,	"FilterName", u8"{}(シーンチェンジ)", filterName.max_fmt_length, u8"");
 
 		load_bool(easings.,	linked_track_invert_shift,	"Easings");
-		load_bool(easings.,	wheel_click,		"Easings");
-		load_bool(easings.,	tooltip,			"Easings");
-		load_bool(easings.,	tip_anim,			"Easings");
-		load_gen (easings.,	tip_delay,			"Easings",
+		load_bool(easings.,	wheel_click,			"Easings");
+		load_bool(easings.,	tooltip_mode,			"Easings");
+		load_int (easings.,	tooltip_values_left,	"Easings");
+		load_int (easings.,	tooltip_values_right,	"Easings");
+		load_bool(easings., tooltip_values_zigzag,	"Easings");
+		load_bool(easings.,	tip_anim,				"Easings");
+		load_gen (easings.,	tip_delay,				"Easings",
 			[](auto x) { return std::clamp<int>(x, decltype(easings)::min_time, decltype(easings)::max_time); }, /* id */);
-		load_gen (easings.,	tip_duration,		"Easings",
+		load_gen (easings.,	tip_duration,			"Easings",
 			[](auto x) { return std::clamp<int>(x, decltype(easings)::min_time, decltype(easings)::max_time); }, /* id */);
-		load_int(easings.,	tip_text_color,		"Easings");
+		load_int(easings.,	tip_text_color,			"Easings");
 
 	#undef load_str
 	#undef load_key
@@ -2116,8 +2270,13 @@ LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM wparam, LPARA
 	auto const idx = static_cast<size_t>(data);
 
 	// handle tooltip if exists.
-	if (settings.easings.tooltip)
-		Easings::relay_tooltip_message(hwnd, message, wparam, lparam, idx, settings.easings.tip_text_color);
+	if (std::optional<LRESULT> ret; settings.easings.is_tooltip_enabled() &&
+		(ret = Easings::relay_tooltip_message(hwnd, message, wparam, lparam, idx,
+			settings.easings.tooltip_mode,
+			settings.easings.tooltip_values_left, settings.easings.tooltip_values_right, settings.easings.tooltip_values_zigzag,
+			settings.easings.tip_text_color)).has_value()) {
+		return ret.value();
+	}
 
 	switch (message) {
 	case WM_MBUTTONUP:
@@ -2287,7 +2446,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 		if (settings.easings.is_enabled()) {
 			for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++)
 				::SetWindowSubclass(exedit.hwnd_track_buttons[i], param_button_hook, Easings::hook_uid(), { i });
-			if (settings.easings.tooltip)
+			if (settings.easings.is_tooltip_enabled())
 				Easings::setup_tooltip(hwnd, settings.easings.tip_anim,
 					settings.easings.tip_delay, settings.easings.tip_duration);
 		}
@@ -2297,7 +2456,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, EditHan
 		TextBox::batch.discard(hwnd, PrvMsg::NotifyUpdate);
 		KeyboardHook::unhook();
 		TrackLabel::cursor.free();
-		if (settings.easings.tooltip) Easings::term_tooltip();
+		if (settings.easings.is_tooltip_enabled()) Easings::term_tooltip();
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
@@ -2344,7 +2503,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.82"
+#define PLUGIN_VERSION	"v1.90-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
