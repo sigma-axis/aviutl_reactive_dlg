@@ -99,6 +99,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="clipboard.hpp" />
     <ClInclude Include="memory_protect.hpp" />
     <ClInclude Include="modkeys.hpp" />
     <ClInclude Include="slim_formatter.hpp" />
