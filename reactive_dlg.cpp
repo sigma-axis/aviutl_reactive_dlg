@@ -870,7 +870,7 @@ private:
 		} state = idle;
 
 		filter_name_cache const* candidate = nullptr;
-	} hook_states[ExEdit::Object::MAX_FILTER]{};
+	} hook_states[ExEdit::Object::MAX_FILTER];
 
 	// adjusts positions and sizes of the check button and the separator.
 	// `hook_states[filter_index].state` must be set to `manip` before this call.
@@ -1402,446 +1402,6 @@ private:
 
 	static inline constinit HWND tooltip = nullptr;
 
-	struct menu_commands {
-		struct cmd_base {
-			int denom, prec, min, max;
-			Object::TrackMode mode; easing_spec spec;
-
-		protected:
-			// appends a menu item with a formatted title.
-			static void append_menu(HMENU menu, uint32_t id, wchar_t const* fmt, auto... params)
-			{
-				if constexpr (sizeof...(params) > 0) {
-					wchar_t buf[256];
-					swprintf_s(buf, std::size(buf), fmt, params...);
-					append_menu(menu, id, buf);
-				}
-				else ::AppendMenuW(menu, MF_STRING, id, fmt);
-			}
-			// grays out the last added menu item.
-			static void gray_out(HMENU menu)
-			{
-				int n = ::GetMenuItemCount(menu); // assumes it's positive.
-				MENUITEMINFOW mii{ .cbSize = sizeof(mii), .fMask = MIIM_STATE, .fState = MFS_GRAYED };
-				::SetMenuItemInfoW(menu, n - 1, TRUE, &mii);
-
-			}
-			static void push_undo(Object const& obj)
-			{
-				exedit.nextundo();
-				exedit.setundo(&obj - (*exedit.ObjectArray_ptr), 0x01);
-			}
-
-			// quickly determines whether there is a left object in the midpoint-chain.
-			static bool has_adjacent_left(ExEdit::Object const& obj) {
-				int j = obj.index_midpt_leader, i = &obj - *exedit.ObjectArray_ptr;
-				return j >= 0 && i != j;
-			}
-			// quickly determines whether there is a right object in the midpoint-chain.
-			static bool has_adjacent_right(ExEdit::Object const& obj) {
-				return obj.index_midpt_leader >= 0 &&
-					exedit.NextObjectIdxArray[&obj - *exedit.ObjectArray_ptr] >= 0;
-			}
-		};
-
-		struct copy : cmd_base {
-			bool append(HMENU menu, uint32_t id)
-			{
-				append_menu(menu, id, L"数値をコピー");
-				return true;
-			}
-
-			void execute(ExEdit::Object& obj, size_t idx_track) const
-			{
-				sigma_lib::W32::clipboard::write(
-					collect_values(obj, idx_track, denom).span().to_string(prec, false, false));
-			}
-		};
-
-		struct modify_base : cmd_base {
-			void execute(this auto const& self, ExEdit::Object& obj, size_t idx_track)
-			{
-				push_undo(obj);
-
-				auto [pos, chain] = collect_pos_chain(obj);
-				auto values = collect_int_values(chain, idx_track);
-				self.modify_values(pos, values);
-				apply_int_values(pos, chain, values, idx_track);
-			}
-		};
-		struct paste_base : modify_base {
-			formatted_valuespan list;
-		};
-		struct paste_unique : paste_base {
-			bool append(HMENU menu, uint32_t id)
-			{
-				if ((mode.num & 0x0f) != 0) return false;
-
-				list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
-				list = list.trim_from_end(0, list.size() - 1);
-				list.discard_section();
-				append_menu(menu, id, L"数値を貼り付け (%s)", list.to_string(prec, false, false).c_str());
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// set all values uniformly.
-				values.front() = val_disp_to_int(list.values.front(), denom, prec, min, max);
-			}
-		};
-
-		struct paste_two : paste_base {
-			bool append(HMENU menu, uint32_t id)
-			{
-				if ((mode.num & 0x0f) == 0 || (list.size() >= 3 && !list.has_section_full())) return false;
-
-				list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
-				append_menu(menu, id, L"区間の左右 (%s)",
-					list.to_string(prec, false, false).c_str());
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// set values on the left and the right.
-				int val_l = val_disp_to_int(list.values.front(), denom, prec, min, max),
-					val_r = val_disp_to_int(list.values.back(), denom, prec, min, max);
-				if (values.size() > 2) {
-					values[pos] = val_l; values[pos + 1] = val_r;
-				}
-				else { values.front() = val_l; values.back() = val_r; }
-			}
-		};
-
-		struct paste_left : paste_base {
-			bool append(HMENU menu, uint32_t id)
-			{
-				if ((mode.num & 0x0f) == 0 || (list.size() != 1 && !list.has_section_full())) return false;
-
-				list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
-				list = list.trim_from_end(0, list.size() - 1);
-				list.discard_section();
-				append_menu(menu, id, L"区間の左だけ (%s)", list.to_string(prec, false, false).c_str());
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// set the value on the left track.
-				int val = val_disp_to_int(list.values.front(), denom, prec, min, max);
-				if (values.size() > 2) values[pos] = val;
-				else values.front() = val;
-			}
-		};
-
-		struct paste_right : paste_base {
-			bool append(HMENU menu, uint32_t id)
-			{
-				if ((mode.num & 0x0f) == 0 || (list.size() != 1 && !list.has_section_full())) return false;
-
-				list = list.has_section_full() ? list.trim_from_sect_r(0) : list;
-				list = list.trim_from_end(list.size() - 1, 0);
-				list.discard_section();
-				append_menu(menu, id, L"区間の右だけ (%s)", list.to_string(prec, false, false).c_str());
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// set the value on the right track.
-				int val = val_disp_to_int(list.values.front(), denom, prec, min, max);
-				if (values.size() > 2) values[pos + 1] = val;
-				else values.back() = val;
-			}
-		};
-
-		struct paste_left_all : paste_base {
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
-			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints || (list.size() != 1 && !list.has_section_full())) return false;
-				if (!has_adjacent_left(obj)) return false;
-
-				// (...%s→%s→[ %s ])
-				if (list.has_section_full()) list = list.trim_from_sect_r(-1);
-				append_menu(menu, id, L"区間基準で左半分 (%s)",
-					list.trim_from_end(list.size() - 3, 0).to_string(prec, true, false).c_str());
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// set values on the left half.
-				for (int p = std::max(pos - list.section, 0); p <= pos; p++)
-					values[p] = val_disp_to_int(list.values[p - pos + list.section], denom, prec, min, max);
-			}
-		};
-
-		struct paste_right_all : paste_base {
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
-			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints || (list.size() != 1 && !list.has_section_full())) return false;
-				if (!has_adjacent_right(obj)) return false;
-
-				// ([ %s ]→%s→%s...)
-				if (list.has_section_full()) list = list.trim_from_sect_l(-1);
-				append_menu(menu, id, L"区間基準で右半分 (%s)",
-					list.trim_from_end(0, list.size() - 3).to_string(prec, false, true).c_str());
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// set values on the right half.
-				for (int p = pos + 1, N = std::min<int>(pos + list.size() - list.section, values.size());
-					p < N; p++)
-					values[p] = val_disp_to_int(list.values[p - pos + list.section], denom, prec, min, max);
-			}
-		};
-
-		struct paste_all : paste_base {
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
-			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints || obj.index_midpt_leader < 0 ||
-					!list.has_section_full()) return false;
-
-				// (...%s→[ %s→%s ]→%s...)
-				append_menu(menu, id, L"区間基準で全て (%s)",
-					list.trim_from_sect(1, 1).to_string(prec, true, true).c_str());
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// set values on the left and the right.
-				for (int p = std::max(pos - list.section, 0),
-					N = std::min<int>(pos + list.size() - list.section, values.size());
-					p < N; p++)
-					values[p] = val_disp_to_int(list.values[p - pos + list.section], denom, prec, min, max);
-			}
-		};
-
-		struct paste_all_headed : paste_base {
-			bool append(HMENU menu, uint32_t id)
-			{
-				if ((mode.num & 0x0f) == 0) return false;
-
-				// (%s→%s→%s...)
-				if (spec.twopoints)
-					list = list.trim_from_end(0, list.size() - 2);
-				list.discard_section();
-				append_menu(menu, id, L"先頭基準で全て (%s)",
-					list.trim_from_end(0, list.size() - 3).to_string(prec, false, !spec.twopoints).c_str());
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// set the values for each interval.
-				for (int p = std::min<int>(list.size(), values.size()); --p >= 0;)
-					values[p] = val_disp_to_int(list.values[p], denom, prec, min, max);
-			}
-		};
-
-		struct write_l2r : modify_base {
-			double value; // left value.
-			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
-			{
-				if ((mode.num & 0x0f) == 0) return false;
-
-				value = info_l.value();
-				append_menu(menu, id, L"上書き: 左→右 (%.*f)",
-					static_cast<int>(0.5 + std::log10(prec)), value);
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// copy the left value to right.
-				values[pos + 1] = values[pos];
-			}
-		};
-
-		struct write_r2l : modify_base {
-			double value; // right value.
-			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
-			{
-				if ((mode.num & 0x0f) == 0) return false;
-
-				value = info_r.value();
-				append_menu(menu, id, L"上書き: 左←右 (%.*f)",
-					static_cast<int>(0.5 + std::log10(prec)), value);
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// copy the right value to left.
-				values[pos] = values[pos + 1];
-			}
-		};
-
-		struct swap_left_right : modify_base {
-			double value_l, value_r; // original values on the both sides.
-			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
-			{
-				if ((mode.num & 0x0f) == 0) return false;
-
-				value_l = info_l.value(); value_r = info_r.value();
-				int prec_len = static_cast<int>(0.5 + std::log10(prec));
-				append_menu(menu, id, L"入替え: 左⇆右 (%.*f ⇆ %.*f)",
-					prec_len, value_l, prec_len, value_r);
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// swap the values on left and right.
-				std::swap(values[pos], values[pos + 1]);
-			}
-		};
-
-		struct write_left_flat : modify_base {
-			double value; // left value of the selected section.
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_l)
-			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints || !has_adjacent_left(obj)) return false;
-
-				value = info_l.value();
-				append_menu(menu, id, L"左の区間を全て %.*f に",
-					static_cast<int>(0.5 + std::log10(prec)), value);
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// copy the value to the left sections.
-				auto val = val_disp_to_int(value, denom, prec, min, max);
-				for (int p = 0; p < pos; p++) values[p] = val;
-			}
-		};
-
-		struct write_right_flat : modify_base {
-			double value; // right value of the selected section.
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_r)
-			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints || !has_adjacent_right(obj)) return false;
-
-				value = info_r.value();
-				append_menu(menu, id, L"右の区間を全て %.*f に",
-					static_cast<int>(0.5 + std::log10(prec)), value);
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// copy the value to the left sections.
-				auto val = val_disp_to_int(value, denom, prec, min, max);
-				for (int p = pos + 2; p < static_cast<int>(values.size()); p++) values[p] = val;
-			}
-		};
-
-		struct translate : modify_base {
-			bool to_right;
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, bool right)
-			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints || obj.index_midpt_leader < 0) return false;
-
-				to_right = right;
-				append_menu(menu, id, to_right ? L"区間1つ分右へ" : L"区間1つ分左へ");
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				// shift the values to left or right.
-				std::memmove(values.data() + (to_right ? 1 : 0), values.data() + (to_right ? 0 : 1), sizeof(int) * (values.size() - 1));
-			}
-		};
-
-		struct flip_base : modify_base {
-		protected:
-			constexpr static int idx_easing_step = 3; // 「瞬間移動」
-			bool is_easing_step() const { return (mode.num & 0x0f) == idx_easing_step; }
-			bool append_core(HMENU menu, uint32_t id, wchar_t const* title,
-				ExEdit::Object const& obj, bool require_left, bool require_right) const
-			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints || obj.index_midpt_leader < 0) return false;
-
-				append_menu(menu, id, title);
-				if ((require_left && !has_adjacent_left(obj)) ||
-					(require_right && !has_adjacent_right(obj))) gray_out(menu);
-				return true;
-			}
-
-			void flip_values(std::vector<int>& values, int flip_center_x2) const
-			{
-				if (is_easing_step()) flip_center_x2--; // handle stepping easing specially.
-
-				// reverse the values. values at off-range are filled from the nearest.
-				for (size_t p = flip_center_x2 + 1; p < values.size(); p++)
-					values[p] = values.front();
-				for (size_t p = 0, q = flip_center_x2; p < q; p++, q--) {
-					if (q >= values.size()) values[p] = values.back();
-					else std::swap(values[p], values[q]);
-				}
-			}
-		};
-
-		struct flip_left : flip_base {
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
-			{
-				if (!append_core(menu, id, L"区間の左を中心", obj, true, false)) return false;
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				flip_values(values, 2 * pos);
-			}
-		};
-
-		struct flip_middle : flip_base {
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
-			{
-				if (!append_core(menu, id, L"区間の中央を中心", obj, false, false)) return false;
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				flip_values(values, 2 * pos + 1);
-			}
-		};
-
-		struct flip_right : flip_base {
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
-			{
-				if (!append_core(menu, id, L"区間の右を中心", obj, false, true)) return false;
-				if (!has_adjacent_right(obj)) gray_out(menu);
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				flip_values(values, 2 * pos + 2);
-			}
-		};
-
-		struct flip_entire : flip_base {
-			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
-			{
-				if (!append_core(menu, id, L"全区間", obj, false, false)) return false;
-				return true;
-			}
-
-			void modify_values(int pos, std::vector<int>& values) const
-			{
-				flip_values(values, static_cast<int>(values.size() - 1));
-			}
-		};
-	};
-
 public:
 	// should be called when each trackbar button recieves messages,
 	// and handles/updates tooltip states.
@@ -2014,6 +1574,459 @@ public:
 		}
 	}
 
+private:
+	struct menu_commands {
+		struct track_info {
+			int denom, prec, min, max;
+			Object::TrackMode mode; easing_spec spec;
+
+			track_info(TrackInfo const& src, Object::TrackMode mode)
+				: denom{ src.denominator() }
+				, prec{ src.precision() }
+				, min{ src.val_int_min }
+				, max{ src.val_int_max }
+				, mode{ mode }
+				, spec{ easing_name_spec(mode).second } {}
+		};
+		struct cmd_base {
+			track_info const& info;
+
+		protected:
+			// appends a menu item with a formatted title.
+			static void append_menu(HMENU menu, uint32_t id, wchar_t const* fmt, auto... params)
+			{
+				if constexpr (sizeof...(params) > 0) {
+					wchar_t buf[256];
+					::swprintf_s(buf, std::size(buf), fmt, params...);
+					append_menu(menu, id, buf);
+				}
+				else ::AppendMenuW(menu, MF_STRING, id, fmt);
+			}
+			// grays out the last added menu item.
+			static void gray_out(HMENU menu)
+			{
+				int n = ::GetMenuItemCount(menu); // assumes it's positive.
+				MENUITEMINFOW mii{ .cbSize = sizeof(mii), .fMask = MIIM_STATE, .fState = MFS_GRAYED };
+				::SetMenuItemInfoW(menu, n - 1, TRUE, &mii);
+
+			}
+			static void push_undo(Object const& obj)
+			{
+				exedit.nextundo();
+				exedit.setundo(&obj - (*exedit.ObjectArray_ptr), 0x01);
+			}
+
+			// quickly determines whether there is a left object in the midpoint-chain.
+			static bool has_adjacent_left(ExEdit::Object const& obj) {
+				int j = obj.index_midpt_leader, i = &obj - *exedit.ObjectArray_ptr;
+				return j >= 0 && i != j;
+			}
+			// quickly determines whether there is a right object in the midpoint-chain.
+			static bool has_adjacent_right(ExEdit::Object const& obj) {
+				return obj.index_midpt_leader >= 0 &&
+					exedit.NextObjectIdxArray[&obj - *exedit.ObjectArray_ptr] >= 0;
+			}
+		};
+
+		struct copy : cmd_base {
+			bool append(HMENU menu, uint32_t id)
+			{
+				append_menu(menu, id, L"数値をコピー");
+				return true;
+			}
+
+			void execute(ExEdit::Object& obj, size_t idx_track) const
+			{
+				sigma_lib::W32::clipboard::write(
+					collect_values(obj, idx_track, info.denom).span().to_string(info.prec, false, false));
+			}
+		};
+
+		struct modify_base : cmd_base {
+			void execute(this auto const& self, ExEdit::Object& obj, size_t idx_track)
+			{
+				push_undo(obj);
+
+				auto [pos, chain] = collect_pos_chain(obj);
+				auto values = collect_int_values(chain, idx_track);
+				self.modify_values(pos, values);
+				apply_int_values(pos, chain, values, idx_track);
+			}
+		};
+		struct paste_base : modify_base {
+			formatted_valuespan list;
+		};
+		struct paste_unique : paste_base {
+			bool append(HMENU menu, uint32_t id)
+			{
+				if ((info.mode.num & 0x0f) != 0) return false;
+
+				list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
+				list = list.trim_from_end(0, list.size() - 1);
+				list.discard_section();
+				append_menu(menu, id, L"数値を貼り付け (%s)", list.to_string(info.prec, false, false).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set all values uniformly.
+				values.front() = val_disp_to_int(list.values.front(), info.denom, info.prec, info.min, info.max);
+			}
+		};
+
+		struct paste_two : paste_base {
+			bool append(HMENU menu, uint32_t id)
+			{
+				if ((info.mode.num & 0x0f) == 0 || (list.size() >= 3 && !list.has_section_full())) return false;
+
+				list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
+				append_menu(menu, id, L"区間の左右 (%s)",
+					list.to_string(info.prec, false, false).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set values on the left and the right.
+				int val_l = val_disp_to_int(list.values.front(), info.denom, info.prec, info.min, info.max),
+					val_r = val_disp_to_int(list.values.back(), info.denom, info.prec, info.min, info.max);
+				if (values.size() > 2) {
+					values[pos] = val_l; values[pos + 1] = val_r;
+				}
+				else { values.front() = val_l; values.back() = val_r; }
+			}
+		};
+
+		struct paste_left : paste_base {
+			bool append(HMENU menu, uint32_t id)
+			{
+				if ((info.mode.num & 0x0f) == 0 || (list.size() != 1 && !list.has_section_full())) return false;
+
+				list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
+				list = list.trim_from_end(0, list.size() - 1);
+				list.discard_section();
+				append_menu(menu, id, L"区間の左だけ (%s)", list.to_string(info.prec, false, false).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set the value on the left track.
+				int val = val_disp_to_int(list.values.front(), info.denom, info.prec, info.min, info.max);
+				if (values.size() > 2) values[pos] = val;
+				else values.front() = val;
+			}
+		};
+
+		struct paste_right : paste_base {
+			bool append(HMENU menu, uint32_t id)
+			{
+				if ((info.mode.num & 0x0f) == 0 || (list.size() != 1 && !list.has_section_full())) return false;
+
+				list = list.has_section_full() ? list.trim_from_sect_r(0) : list;
+				list = list.trim_from_end(list.size() - 1, 0);
+				list.discard_section();
+				append_menu(menu, id, L"区間の右だけ (%s)", list.to_string(info.prec, false, false).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set the value on the right track.
+				int val = val_disp_to_int(list.values.front(), info.denom, info.prec, info.min, info.max);
+				if (values.size() > 2) values[pos + 1] = val;
+				else values.back() = val;
+			}
+		};
+
+		struct paste_left_all : paste_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
+			{
+				if ((info.mode.num & 0x0f) == 0 || info.spec.twopoints || (list.size() != 1 && !list.has_section_full())) return false;
+				if (!has_adjacent_left(obj)) return false;
+
+				// (...%s→%s→[ %s ])
+				if (list.has_section_full()) list = list.trim_from_sect_r(-1);
+				append_menu(menu, id, L"区間基準で左半分 (%s)",
+					list.trim_from_end(list.size() - 3, 0).to_string(info.prec, true, false).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set values on the left half.
+				for (int p = std::max(pos - list.section, 0); p <= pos; p++)
+					values[p] = val_disp_to_int(list.values[p - pos + list.section], info.denom, info.prec, info.min, info.max);
+			}
+		};
+
+		struct paste_right_all : paste_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
+			{
+				if ((info.mode.num & 0x0f) == 0 || info.spec.twopoints || (list.size() != 1 && !list.has_section_full())) return false;
+				if (!has_adjacent_right(obj)) return false;
+
+				// ([ %s ]→%s→%s...)
+				if (list.has_section_full()) list = list.trim_from_sect_l(-1);
+				append_menu(menu, id, L"区間基準で右半分 (%s)",
+					list.trim_from_end(0, list.size() - 3).to_string(info.prec, false, true).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set values on the right half.
+				for (int p = pos + 1, N = std::min<int>(pos + list.size() - list.section, values.size());
+					p < N; p++)
+					values[p] = val_disp_to_int(list.values[p - pos + list.section], info.denom, info.prec, info.min, info.max);
+			}
+		};
+
+		struct paste_all : paste_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
+			{
+				if ((info.mode.num & 0x0f) == 0 || info.spec.twopoints || obj.index_midpt_leader < 0 ||
+					!list.has_section_full()) return false;
+
+				// (...%s→[ %s→%s ]→%s...)
+				append_menu(menu, id, L"区間基準で全て (%s)",
+					list.trim_from_sect(1, 1).to_string(info.prec, true, true).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set values on the left and the right.
+				for (int p = std::max(pos - list.section, 0),
+					N = std::min<int>(pos + list.size() - list.section, values.size());
+					p < N; p++)
+					values[p] = val_disp_to_int(list.values[p - pos + list.section], info.denom, info.prec, info.min, info.max);
+			}
+		};
+
+		struct paste_all_headed : paste_base {
+			bool append(HMENU menu, uint32_t id)
+			{
+				if ((info.mode.num & 0x0f) == 0) return false;
+
+				// (%s→%s→%s...)
+				if (info.spec.twopoints)
+					list = list.trim_from_end(0, list.size() - 2);
+				list.discard_section();
+				append_menu(menu, id, L"先頭基準で全て (%s)",
+					list.trim_from_end(0, list.size() - 3).to_string(info.prec, false, !info.spec.twopoints).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set the values for each interval.
+				for (int p = std::min<int>(list.size(), values.size()); --p >= 0;)
+					values[p] = val_disp_to_int(list.values[p], info.denom, info.prec, info.min, info.max);
+			}
+		};
+
+		struct write_l2r : modify_base {
+			double value; // left value.
+			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
+			{
+				if ((info.mode.num & 0x0f) == 0) return false;
+
+				value = info_l.value();
+				append_menu(menu, id, L"上書き: 左→右 (%.*f)",
+					static_cast<int>(0.5 + std::log10(info.prec)), value);
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// copy the left value to right.
+				values[pos + 1] = values[pos];
+			}
+		};
+
+		struct write_r2l : modify_base {
+			double value; // right value.
+			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
+			{
+				if ((info.mode.num & 0x0f) == 0) return false;
+
+				value = info_r.value();
+				append_menu(menu, id, L"上書き: 左←右 (%.*f)",
+					static_cast<int>(0.5 + std::log10(info.prec)), value);
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// copy the right value to left.
+				values[pos] = values[pos + 1];
+			}
+		};
+
+		struct swap_left_right : modify_base {
+			double value_l, value_r; // original values on the both sides.
+			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
+			{
+				if ((info.mode.num & 0x0f) == 0) return false;
+
+				value_l = info_l.value(); value_r = info_r.value();
+				int prec_len = static_cast<int>(0.5 + std::log10(info.prec));
+				append_menu(menu, id, L"入替え: 左⇆右 (%.*f ⇆ %.*f)",
+					prec_len, value_l, prec_len, value_r);
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// swap the values on left and right.
+				std::swap(values[pos], values[pos + 1]);
+			}
+		};
+
+		struct write_left_flat : modify_base {
+			double value; // left value of the selected section.
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_l)
+			{
+				if ((info.mode.num & 0x0f) == 0 || info.spec.twopoints || !has_adjacent_left(obj)) return false;
+
+				value = info_l.value();
+				append_menu(menu, id, L"左の区間を全て %.*f に",
+					static_cast<int>(0.5 + std::log10(info.prec)), value);
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// copy the value to the left sections.
+				auto val = val_disp_to_int(value, info.denom, info.prec, info.min, info.max);
+				for (int p = 0; p < pos; p++) values[p] = val;
+			}
+		};
+
+		struct write_right_flat : modify_base {
+			double value; // right value of the selected section.
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_r)
+			{
+				if ((info.mode.num & 0x0f) == 0 || info.spec.twopoints || !has_adjacent_right(obj)) return false;
+
+				value = info_r.value();
+				append_menu(menu, id, L"右の区間を全て %.*f に",
+					static_cast<int>(0.5 + std::log10(info.prec)), value);
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// copy the value to the left sections.
+				auto val = val_disp_to_int(value, info.denom, info.prec, info.min, info.max);
+				for (int p = pos + 2; p < static_cast<int>(values.size()); p++) values[p] = val;
+			}
+		};
+
+		struct translate : modify_base {
+			bool to_right;
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, bool right)
+			{
+				if ((info.mode.num & 0x0f) == 0 || info.spec.twopoints || obj.index_midpt_leader < 0) return false;
+
+				to_right = right;
+				append_menu(menu, id, to_right ? L"区間1つ分右へ" : L"区間1つ分左へ");
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// shift the values to left or right.
+				std::memmove(values.data() + (to_right ? 1 : 0), values.data() + (to_right ? 0 : 1), sizeof(int) * (values.size() - 1));
+			}
+		};
+
+		struct flip_base : modify_base {
+		protected:
+			constexpr static int idx_easing_step = 3; // 「瞬間移動」
+			bool is_easing_step() const { return (info.mode.num & 0x0f) == idx_easing_step; }
+			bool append_core(HMENU menu, uint32_t id, wchar_t const* title,
+				ExEdit::Object const& obj, bool require_left, bool require_right) const
+			{
+				if ((info.mode.num & 0x0f) == 0 || info.spec.twopoints || obj.index_midpt_leader < 0) return false;
+
+				append_menu(menu, id, title);
+				if ((require_left && !has_adjacent_left(obj)) ||
+					(require_right && !has_adjacent_right(obj))) gray_out(menu);
+				return true;
+			}
+
+			void flip_values(std::vector<int>& values, int flip_center_x2) const
+			{
+				if (is_easing_step()) flip_center_x2--; // handle stepping easing specially.
+
+				// reverse the values. values at off-range are filled from the nearest.
+				for (size_t p = flip_center_x2 + 1; p < values.size(); p++)
+					values[p] = values.front();
+				for (size_t p = 0, q = flip_center_x2; p < q; p++, q--) {
+					if (q >= values.size()) values[p] = values.back();
+					else std::swap(values[p], values[q]);
+				}
+			}
+		};
+
+		struct flip_left : flip_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
+			{
+				if (!append_core(menu, id, L"区間の左を中心", obj, true, false)) return false;
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				flip_values(values, 2 * pos);
+			}
+		};
+
+		struct flip_middle : flip_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
+			{
+				if (!append_core(menu, id, L"区間の中央を中心", obj, false, false)) return false;
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				flip_values(values, 2 * pos + 1);
+			}
+		};
+
+		struct flip_right : flip_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
+			{
+				if (!append_core(menu, id, L"区間の右を中心", obj, false, true)) return false;
+				if (!has_adjacent_right(obj)) gray_out(menu);
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				flip_values(values, 2 * pos + 2);
+			}
+		};
+
+		struct flip_entire : flip_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
+			{
+				if (!append_core(menu, id, L"オブジェクト全体", obj, false, false)) return false;
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				flip_values(values, static_cast<int>(values.size() - 1));
+			}
+		};
+	};
+
+public:
 	static bool on_context_menu(HWND hwnd, size_t idx)
 	{
 		struct menu_id {
@@ -2051,19 +2064,14 @@ public:
 		};
 
 		auto& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
-		auto& track_left = exedit.trackinfo_left[idx];
-		auto& track_right = exedit.trackinfo_right[idx];
-		int const denom = track_left.denominator(), prec = track_left.precision(),
-			min = track_left.val_int_min, max = track_left.val_int_max;
-		auto const mode = obj.track_mode[idx];
-		auto const spec = easing_name_spec(mode).second;
+		menu_commands::track_info info{ exedit.trackinfo_left[idx], obj.track_mode[idx] };
 
 		// prepare the context menu.
 		auto menu = ::CreatePopupMenu();
 
 		// add menuitems.
 		// copying to clipboard.
-		menu_commands::copy copy{ denom, prec, min, max, mode, spec };
+		menu_commands::copy copy{ info };
 		copy.append(menu, menu_id::copy);
 
 		// parse the clipboard string for pasting.
@@ -2072,14 +2080,14 @@ public:
 			value_storage = { std::move(str) };
 		auto values = value_storage.span();
 
-		menu_commands::paste_unique		paste_unique		{ denom, prec, min, max, mode, spec, values, };
-		menu_commands::paste_left_all	paste_left_all		{ denom, prec, min, max, mode, spec, values, };
-		menu_commands::paste_left		paste_left			{ denom, prec, min, max, mode, spec, values, };
-		menu_commands::paste_two		paste_two			{ denom, prec, min, max, mode, spec, values, };
-		menu_commands::paste_right		paste_right			{ denom, prec, min, max, mode, spec, values, };
-		menu_commands::paste_right_all	paste_right_all		{ denom, prec, min, max, mode, spec, values, };
-		menu_commands::paste_all		paste_all			{ denom, prec, min, max, mode, spec, values, };
-		menu_commands::paste_all_headed	paste_all_headed	{ denom, prec, min, max, mode, spec, values, };
+		menu_commands::paste_unique		paste_unique	{ info, values, };
+		menu_commands::paste_left_all	paste_left_all	{ info, values, };
+		menu_commands::paste_left		paste_left		{ info, values, };
+		menu_commands::paste_two		paste_two		{ info, values, };
+		menu_commands::paste_right		paste_right		{ info, values, };
+		menu_commands::paste_right_all	paste_right_all	{ info, values, };
+		menu_commands::paste_all		paste_all		{ info, values, };
+		menu_commands::paste_all_headed	paste_all_headed{ info, values, };
 
 		constexpr auto name_paste_root = L"数値を貼り付け";
 		if (values.size() > 0) {
@@ -2100,13 +2108,13 @@ public:
 		else ::AppendMenuW(menu, MF_GRAYED, menu_id::dismissed, name_paste_root);
 		
 		// commands for internal copying.
-		menu_commands::write_l2r		write_l2r			{ denom, prec, min, max, mode, spec };
-		menu_commands::write_r2l		write_r2l			{ denom, prec, min, max, mode, spec };
-		menu_commands::swap_left_right	swap_left_right		{ denom, prec, min, max, mode, spec };
-		menu_commands::write_left_flat	write_left_flat		{ denom, prec, min, max, mode, spec };
-		menu_commands::write_right_flat	write_right_flat	{ denom, prec, min, max, mode, spec };
+		menu_commands::write_l2r		write_l2r		{ info };
+		menu_commands::write_r2l		write_r2l		{ info };
+		menu_commands::swap_left_right	swap_left_right	{ info };
+		menu_commands::write_left_flat	write_left_flat	{ info };
+		menu_commands::write_right_flat	write_right_flat{ info };
 
-		if ((mode.num & 0x0f) != 0) {
+		if ((info.mode.num & 0x0f) != 0) {
 			add_sep(menu);
 
 			write_l2r		.append(menu, menu_id::write_l2r, exedit.trackinfo_left[idx], exedit.trackinfo_right[idx]);
@@ -2117,23 +2125,25 @@ public:
 		}
 
 		// commands for translation.
-		menu_commands::translate		trans_left			{ denom, prec, min, max, mode, spec };
-		menu_commands::translate		trans_right			{ denom, prec, min, max, mode, spec };
+		menu_commands::translate		trans_left		{ info };
+		menu_commands::translate		trans_right		{ info };
 
 		// commands for flippings.
-		menu_commands::flip_left		flip_left			{ denom, prec, min, max, mode, spec };
-		menu_commands::flip_middle		flip_middle			{ denom, prec, min, max, mode, spec };
-		menu_commands::flip_right		flip_right			{ denom, prec, min, max, mode, spec };
-		menu_commands::flip_entire		flip_entire			{ denom, prec, min, max, mode, spec };
+		menu_commands::flip_left		flip_left		{ info };
+		menu_commands::flip_middle		flip_middle		{ info };
+		menu_commands::flip_right		flip_right		{ info };
+		menu_commands::flip_entire		flip_entire		{ info };
 
-		if ((mode.num & 0x0f) != 0 && !spec.twopoints && obj.index_midpt_leader >= 0) {
+		constexpr auto name_translate_root = L"数値を平行移動";
+		constexpr auto name_flip_root = L"数値を前後反転";
+		if ((info.mode.num & 0x0f) != 0 && !info.spec.twopoints && obj.index_midpt_leader >= 0) {
 			add_sep(menu);
 
 			HMENU sub = ::CreatePopupMenu();
 			trans_left	.append(sub, menu_id::trans_left, obj, false);
 			trans_right	.append(sub, menu_id::trans_right, obj, true);
 
-			::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), L"数値を平行移動");
+			::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), name_translate_root);
 
 			sub = ::CreatePopupMenu();
 			flip_entire	.append(sub, menu_id::flip_entire, obj);
@@ -2142,7 +2152,7 @@ public:
 			flip_middle	.append(sub, menu_id::flip_middle, obj);
 			flip_right	.append(sub, menu_id::flip_right, obj);
 
-			::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), L"数値を前後反転");
+			::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), name_flip_root);
 		}
 
 		// show a context menu
@@ -2182,7 +2192,6 @@ public:
 		}
 		return false;
 	}
-
 };
 
 
