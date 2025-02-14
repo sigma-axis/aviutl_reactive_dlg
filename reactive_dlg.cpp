@@ -1399,29 +1399,6 @@ private:
 		}
 		return std::clamp(value, min, max);
 	}
-	static std::vector<int> val_disp_to_int(std::vector<double> const& vals, int denom, int prec, int min, int max)
-	{
-		std::vector<int> ret{}; ret.reserve(vals.size());
-		if (prec < denom) {
-			int const mod = denom / prec, hmod = mod >> 1;
-			for (double val : vals) {
-				int value = static_cast<int>(std::round(val * denom));
-
-				// rounding. an internal value must be a multiple of (denom/prec).
-				int r = value % mod;
-				if (r < 0) r += mod;
-				if (r >= hmod) r -= mod;
-				value -= r;
-
-				ret.push_back(std::clamp(value, min, max));
-			}
-		}
-		else {
-			for (double val : vals)
-				ret.push_back(std::clamp(static_cast<int>(std::round(val * denom)), min, max));
-		}
-		return ret;
-	}
 
 	static inline constinit HWND tooltip = nullptr;
 
@@ -1512,7 +1489,7 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// set all values uniformly.
-				values = { val_disp_to_int(list.values.front(), denom, prec, min, max) };
+				values.front() = val_disp_to_int(list.values.front(), denom, prec, min, max);
 			}
 		};
 
@@ -1589,7 +1566,7 @@ private:
 
 				// (...%s→%s→[ %s ])
 				if (list.has_section_full()) list = list.trim_from_sect_r(-1);
-				append_menu(menu, id, L"左の区間全てに貼り付け (%s)",
+				append_menu(menu, id, L"左の区間全てを貼り付け (%s)",
 					list.trim_from_end(list.size() - 3, 0).to_string(prec, true, false).c_str());
 				return true;
 			}
@@ -1597,8 +1574,8 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// set values on the left half.
-				for (int p = 0; p <= pos; p++)
-					values[p] = val_disp_to_int(list.values[std::max(list.section - pos + p, 0)], denom, prec, min, max);
+				for (int p = std::max(pos - list.section, 0); p <= pos; p++)
+					values[p] = val_disp_to_int(list.values[p - pos + list.section], denom, prec, min, max);
 			}
 		};
 
@@ -1610,7 +1587,7 @@ private:
 
 				// ([ %s ]→%s→%s...)
 				if (list.has_section_full()) list = list.trim_from_sect_l(-1);
-				append_menu(menu, id, L"右の区間全てに貼り付け (%s)",
+				append_menu(menu, id, L"右の区間全てを貼り付け (%s)",
 					list.trim_from_end(0, list.size() - 3).to_string(prec, false, true).c_str());
 				return true;
 			}
@@ -1618,8 +1595,9 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// set values on the right half.
-				for (int p = pos + 1; p < static_cast<int>(values.size()); p++)
-					values[p] = val_disp_to_int(list.values[std::min(list.section - pos + p, list.size() - 1)], denom, prec, min, max);
+				for (int p = pos + 1, N = std::min<int>(pos + list.size() - list.section, values.size());
+					p < N; p++)
+					values[p] = val_disp_to_int(list.values[p - pos + list.section], denom, prec, min, max);
 			}
 		};
 
@@ -1631,7 +1609,7 @@ private:
 					!list.has_section_full()) return false;
 
 				// (...%s→[ %s→%s ]→%s...)
-				append_menu(menu, id, L"全ての区間に貼り付け (%s)",
+				append_menu(menu, id, L"全ての区間を貼り付け (%s)",
 					list.trim_from_sect(1, 1).to_string(prec, true, true).c_str());
 				return true;
 			}
@@ -1639,8 +1617,10 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// set values on the left and the right.
-				for (int p = 0; p < static_cast<int>(values.size()); p++)
-					values[p] = val_disp_to_int(list.values[std::clamp(list.section - pos + p, 0, list.size() - 1)], denom, prec, min, max);
+				for (int p = std::max(pos - list.section, 0),
+					N = std::min<int>(pos + list.size() - list.section, values.size());
+					p < N; p++)
+					values[p] = val_disp_to_int(list.values[p - pos + list.section], denom, prec, min, max);
 			}
 		};
 
@@ -1661,8 +1641,8 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// set the values for each interval.
-				for (int p = 0; p < static_cast<int>(values.size()); p++)
-					values[p] = val_disp_to_int(list.values[std::min(p, list.size() - 1)], denom, prec, min, max);
+				for (int p = std::min<int>(list.size(), values.size()); --p >= 0;)
+					values[p] = val_disp_to_int(list.values[p], denom, prec, min, max);
 			}
 		};
 
@@ -1800,7 +1780,7 @@ private:
 				if (!(has_left || has_right)) return false;
 
 				append_menu(menu, id, title);
-				if ((require_left && !has_left) || (require_right && !has_right))gray_out(menu);
+				if ((require_left && !has_left) || (require_right && !has_right)) gray_out(menu);
 				return true;
 			}
 
@@ -1861,7 +1841,7 @@ private:
 		struct flip_entire : flip_base<flip_entire> {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
-				if (!append_core(menu, id, L"全区間を前後反転", obj, true, true)) return false;
+				if (!append_core(menu, id, L"全区間を前後反転", obj, false, false)) return false;
 				return true;
 			}
 
