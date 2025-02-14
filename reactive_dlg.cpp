@@ -1459,7 +1459,7 @@ private:
 		};
 
 		struct modify_base : cmd_base {
-			void execute(this auto& self, ExEdit::Object& obj, size_t idx_track)
+			void execute(this auto const& self, ExEdit::Object& obj, size_t idx_track)
 			{
 				push_undo(obj);
 
@@ -1497,7 +1497,7 @@ private:
 				if ((mode.num & 0x0f) == 0 || (list.size() >= 3 && !list.has_section_full())) return false;
 
 				list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
-				append_menu(menu, id, L"この区間に数値を貼り付け (%s)",
+				append_menu(menu, id, L"区間の左右 (%s)",
 					list.to_string(prec, false, false).c_str());
 				return true;
 			}
@@ -1522,7 +1522,7 @@ private:
 				list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
 				list = list.trim_from_end(0, list.size() - 1);
 				list.discard_section();
-				append_menu(menu, id, L"左に数値を貼り付け (%s)", list.to_string(prec, false, false).c_str());
+				append_menu(menu, id, L"区間の左だけ (%s)", list.to_string(prec, false, false).c_str());
 				return true;
 			}
 
@@ -1543,7 +1543,7 @@ private:
 				list = list.has_section_full() ? list.trim_from_sect_r(0) : list;
 				list = list.trim_from_end(list.size() - 1, 0);
 				list.discard_section();
-				append_menu(menu, id, L"右に数値を貼り付け (%s)", list.to_string(prec, false, false).c_str());
+				append_menu(menu, id, L"区間の右だけ (%s)", list.to_string(prec, false, false).c_str());
 				return true;
 			}
 
@@ -1564,7 +1564,7 @@ private:
 
 				// (...%s→%s→[ %s ])
 				if (list.has_section_full()) list = list.trim_from_sect_r(-1);
-				append_menu(menu, id, L"左の区間全てを貼り付け (%s)",
+				append_menu(menu, id, L"区間基準で左半分 (%s)",
 					list.trim_from_end(list.size() - 3, 0).to_string(prec, true, false).c_str());
 				return true;
 			}
@@ -1585,7 +1585,7 @@ private:
 
 				// ([ %s ]→%s→%s...)
 				if (list.has_section_full()) list = list.trim_from_sect_l(-1);
-				append_menu(menu, id, L"右の区間全てを貼り付け (%s)",
+				append_menu(menu, id, L"区間基準で右半分 (%s)",
 					list.trim_from_end(0, list.size() - 3).to_string(prec, false, true).c_str());
 				return true;
 			}
@@ -1602,12 +1602,11 @@ private:
 		struct paste_all : paste_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
-				if ((mode.num & 0x0f) == 0 ||
-					spec.twopoints || !(has_adjacent_left(obj) || has_adjacent_right(obj)) ||
+				if ((mode.num & 0x0f) == 0 || spec.twopoints || obj.index_midpt_leader < 0 ||
 					!list.has_section_full()) return false;
 
 				// (...%s→[ %s→%s ]→%s...)
-				append_menu(menu, id, L"全ての区間を貼り付け (%s)",
+				append_menu(menu, id, L"区間基準で全て (%s)",
 					list.trim_from_sect(1, 1).to_string(prec, true, true).c_str());
 				return true;
 			}
@@ -1631,7 +1630,7 @@ private:
 				if (spec.twopoints)
 					list = list.trim_from_end(0, list.size() - 2);
 				list.discard_section();
-				append_menu(menu, id, L"先頭区間から全て貼り付け (%s)",
+				append_menu(menu, id, L"先頭基準で全て (%s)",
 					list.trim_from_end(0, list.size() - 3).to_string(prec, false, !spec.twopoints).c_str());
 				return true;
 			}
@@ -1746,12 +1745,10 @@ private:
 			bool to_right;
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, bool right)
 			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints) return false;
-				auto has_left = has_adjacent_left(obj), has_right = has_adjacent_right(obj);
-				if (!(has_left || has_right)) return false;
+				if ((mode.num & 0x0f) == 0 || spec.twopoints || obj.index_midpt_leader < 0) return false;
 
 				to_right = right;
-				append_menu(menu, id, to_right ? L"値を右へ1区間移動" : L"値を左へ1区間移動");
+				append_menu(menu, id, to_right ? L"区間1つ分右へ" : L"区間1つ分左へ");
 				return true;
 			}
 
@@ -1769,12 +1766,11 @@ private:
 			bool append_core(HMENU menu, uint32_t id, wchar_t const* title,
 				ExEdit::Object const& obj, bool require_left, bool require_right) const
 			{
-				if ((mode.num & 0x0f) == 0 || spec.twopoints) return false;
-				auto has_left = has_adjacent_left(obj), has_right = has_adjacent_right(obj);
-				if (!(has_left || has_right)) return false;
+				if ((mode.num & 0x0f) == 0 || spec.twopoints || obj.index_midpt_leader < 0) return false;
 
 				append_menu(menu, id, title);
-				if ((require_left && !has_left) || (require_right && !has_right)) gray_out(menu);
+				if ((require_left && !has_adjacent_left(obj)) ||
+					(require_right && !has_adjacent_right(obj))) gray_out(menu);
 				return true;
 			}
 
@@ -1795,7 +1791,7 @@ private:
 		struct flip_left : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
-				if (!append_core(menu, id, L"区間の左を中心に前後反転", obj, true, false)) return false;
+				if (!append_core(menu, id, L"区間の左を中心", obj, true, false)) return false;
 				return true;
 			}
 
@@ -1808,7 +1804,7 @@ private:
 		struct flip_middle : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
-				if (!append_core(menu, id, L"この区間を中心に前後反転", obj, false, false)) return false;
+				if (!append_core(menu, id, L"区間の中央を中心", obj, false, false)) return false;
 				return true;
 			}
 
@@ -1821,7 +1817,7 @@ private:
 		struct flip_right : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
-				if (!append_core(menu, id, L"区間の右を中心に前後反転", obj, false, true)) return false;
+				if (!append_core(menu, id, L"区間の右を中心", obj, false, true)) return false;
 				if (!has_adjacent_right(obj)) gray_out(menu);
 				return true;
 			}
@@ -1835,7 +1831,7 @@ private:
 		struct flip_entire : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
-				if (!append_core(menu, id, L"全区間を前後反転", obj, false, false)) return false;
+				if (!append_core(menu, id, L"全区間", obj, false, false)) return false;
 				return true;
 			}
 
@@ -2085,18 +2081,23 @@ public:
 		menu_commands::paste_all		paste_all			{ denom, prec, min, max, mode, spec, values, };
 		menu_commands::paste_all_headed	paste_all_headed	{ denom, prec, min, max, mode, spec, values, };
 
+		constexpr auto name_paste_root = L"数値を貼り付け";
 		if (values.size() > 0) {
-			add_sep(menu);
+			if (!paste_unique	.append(menu, menu_id::paste_unique)) {
+				HMENU sub = ::CreatePopupMenu();
+				paste_all_headed.append(sub, menu_id::paste_all_headed);
+				paste_all		.append(sub, menu_id::paste_all, obj);
+				add_sep(sub);
+				paste_left_all	.append(sub, menu_id::paste_left_all, obj);
+				paste_left		.append(sub, menu_id::paste_left);
+				paste_two		.append(sub, menu_id::paste_two);
+				paste_right		.append(sub, menu_id::paste_right);
+				paste_right_all	.append(sub, menu_id::paste_right_all, obj);
 
-			paste_unique	.append(menu, menu_id::paste_unique);
-			paste_left_all	.append(menu, menu_id::paste_left_all, obj);
-			paste_left		.append(menu, menu_id::paste_left);
-			paste_two		.append(menu, menu_id::paste_two);
-			paste_right		.append(menu, menu_id::paste_right);
-			paste_right_all	.append(menu, menu_id::paste_right_all, obj);
-			paste_all		.append(menu, menu_id::paste_all, obj);
-			paste_all_headed.append(menu, menu_id::paste_all_headed);
+				::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), name_paste_root);
+			}
 		}
+		else ::AppendMenuW(menu, MF_GRAYED, menu_id::dismissed, name_paste_root);
 		
 		// commands for internal copying.
 		menu_commands::write_l2r		write_l2r			{ denom, prec, min, max, mode, spec };
@@ -2119,32 +2120,29 @@ public:
 		menu_commands::translate		trans_left			{ denom, prec, min, max, mode, spec };
 		menu_commands::translate		trans_right			{ denom, prec, min, max, mode, spec };
 
-		if ((mode.num & 0x0f) != 0 && !spec.twopoints) {
-			add_sep(menu); bool b = false;
-
-			b |= trans_left	.append(menu, menu_id::trans_left, obj, false);
-			b |= trans_right.append(menu, menu_id::trans_right, obj, true);
-
-			// remove the separator if none is added.
-			if (!b) ::RemoveMenu(menu, ::GetMenuItemCount(menu) - 1, MF_BYPOSITION);
-		}
-
 		// commands for flippings.
 		menu_commands::flip_left		flip_left			{ denom, prec, min, max, mode, spec };
 		menu_commands::flip_middle		flip_middle			{ denom, prec, min, max, mode, spec };
 		menu_commands::flip_right		flip_right			{ denom, prec, min, max, mode, spec };
 		menu_commands::flip_entire		flip_entire			{ denom, prec, min, max, mode, spec };
 
-		if ((mode.num & 0x0f) != 0 && !spec.twopoints) {
-			add_sep(menu); bool b = false;
+		if ((mode.num & 0x0f) != 0 && !spec.twopoints && obj.index_midpt_leader >= 0) {
+			add_sep(menu);
 
-			b |= flip_left	.append(menu, menu_id::flip_left, obj);
-			b |= flip_middle.append(menu, menu_id::flip_middle, obj);
-			b |= flip_right	.append(menu, menu_id::flip_right, obj);
-			b |= flip_entire.append(menu, menu_id::flip_entire, obj);
+			HMENU sub = ::CreatePopupMenu();
+			trans_left	.append(sub, menu_id::trans_left, obj, false);
+			trans_right	.append(sub, menu_id::trans_right, obj, true);
 
-			// remove the separator if none is added.
-			if (!b) ::RemoveMenu(menu, ::GetMenuItemCount(menu) - 1, MF_BYPOSITION);
+			::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), L"数値を平行移動");
+
+			sub = ::CreatePopupMenu();
+			flip_entire	.append(sub, menu_id::flip_entire, obj);
+			add_sep(sub);
+			flip_left	.append(sub, menu_id::flip_left, obj);
+			flip_middle	.append(sub, menu_id::flip_middle, obj);
+			flip_right	.append(sub, menu_id::flip_right, obj);
+
+			::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), L"数値を前後反転");
 		}
 
 		// show a context menu
@@ -2152,10 +2150,8 @@ public:
 		uint32_t id = ::TrackPopupMenuEx(menu,
 			TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 			tp.rcExclude.left, tp.rcExclude.bottom, hwnd, &tp);
-
 		::DestroyMenu(menu);
-
-		if (id == 0) return false; // the menu was dismissed.
+		if (id == menu_id::dismissed) return false;
 
 		// handle the selected item w.r.t. the returned id.
 		switch (id) {
