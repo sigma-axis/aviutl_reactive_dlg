@@ -1460,13 +1460,13 @@ private:
 
 		template<class FinalT>
 		struct modify_base : cmd_base {
-			void execute(ExEdit::Object& obj, size_t idx_track) const
+			void execute(this auto& self, ExEdit::Object& obj, size_t idx_track)
 			{
 				push_undo(obj);
 
 				auto [pos, chain] = collect_pos_chain(obj);
 				auto values = collect_int_values(chain, idx_track);
-				static_cast<FinalT const*>(this)->modify_values(pos, values);
+				self.modify_values(pos, values);
 				apply_int_values(pos, chain, values, idx_track);
 			}
 		};
