@@ -1927,9 +1927,12 @@ public:
 					rc.right = rc.left + content.w;
 					rc.bottom = rc.top + content.h;
 					::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
+
+					// TODO: adjust the position not to clip on edges of the screen.
+
 					::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
 						rc.right - rc.left, rc.bottom - rc.top,
-						SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+						SWP_NOZORDER | SWP_NOACTIVATE);
 					return TRUE;
 				}
 
@@ -1965,7 +1968,8 @@ public:
 						if (!content.values.empty())
 							::DrawTextW(dhdr->nmcd.hdc, content.values.c_str(), content.values.size(), &rc2, DT_CALCRECT | draw_text_options);
 						content.w = std::max(rc1.right - rc1.left, rc2.right - rc2.left);
-						content.h2 = (rc1.bottom - rc1.top) + gap_h;
+						content.h2 = rc1.bottom - rc1.top;
+						if (!content.values.empty()) content.h2 += gap_h;
 						content.h = content.h2 + (rc2.bottom - rc2.top);
 					}
 					else if (dhdr->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYPOSTPAINT;
