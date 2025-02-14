@@ -1458,7 +1458,6 @@ private:
 			}
 		};
 
-		template<class FinalT>
 		struct modify_base : cmd_base {
 			void execute(this auto& self, ExEdit::Object& obj, size_t idx_track)
 			{
@@ -1470,11 +1469,10 @@ private:
 				apply_int_values(pos, chain, values, idx_track);
 			}
 		};
-		template<class FinalT>
-		struct paste_base : modify_base<FinalT> {
+		struct paste_base : modify_base {
 			formatted_valuespan list;
 		};
-		struct paste_unique : paste_base<paste_unique> {
+		struct paste_unique : paste_base {
 			bool append(HMENU menu, uint32_t id)
 			{
 				if ((mode.num & 0x0f) != 0) return false;
@@ -1493,7 +1491,7 @@ private:
 			}
 		};
 
-		struct paste_two : paste_base<paste_two> {
+		struct paste_two : paste_base {
 			bool append(HMENU menu, uint32_t id)
 			{
 				if ((mode.num & 0x0f) == 0 || (list.size() >= 3 && !list.has_section_full())) return false;
@@ -1516,7 +1514,7 @@ private:
 			}
 		};
 
-		struct paste_left : paste_base<paste_left> {
+		struct paste_left : paste_base {
 			bool append(HMENU menu, uint32_t id)
 			{
 				if ((mode.num & 0x0f) == 0 || (list.size() != 1 && !list.has_section_full())) return false;
@@ -1537,7 +1535,7 @@ private:
 			}
 		};
 
-		struct paste_right : paste_base<paste_right> {
+		struct paste_right : paste_base {
 			bool append(HMENU menu, uint32_t id)
 			{
 				if ((mode.num & 0x0f) == 0 || (list.size() != 1 && !list.has_section_full())) return false;
@@ -1558,7 +1556,7 @@ private:
 			}
 		};
 
-		struct paste_left_all : paste_base<paste_left_all> {
+		struct paste_left_all : paste_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if ((mode.num & 0x0f) == 0 || spec.twopoints || (list.size() != 1 && !list.has_section_full())) return false;
@@ -1579,7 +1577,7 @@ private:
 			}
 		};
 
-		struct paste_right_all : paste_base<paste_right_all> {
+		struct paste_right_all : paste_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if ((mode.num & 0x0f) == 0 || spec.twopoints || (list.size() != 1 && !list.has_section_full())) return false;
@@ -1601,7 +1599,7 @@ private:
 			}
 		};
 
-		struct paste_all : paste_base<paste_all> {
+		struct paste_all : paste_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if ((mode.num & 0x0f) == 0 ||
@@ -1624,7 +1622,7 @@ private:
 			}
 		};
 
-		struct paste_all_headed : paste_base<paste_all_headed> {
+		struct paste_all_headed : paste_base {
 			bool append(HMENU menu, uint32_t id)
 			{
 				if ((mode.num & 0x0f) == 0) return false;
@@ -1646,7 +1644,7 @@ private:
 			}
 		};
 
-		struct write_l2r : modify_base<write_l2r> {
+		struct write_l2r : modify_base {
 			double value; // left value.
 			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
 			{
@@ -1665,7 +1663,7 @@ private:
 			}
 		};
 
-		struct write_r2l : modify_base<write_r2l> {
+		struct write_r2l : modify_base {
 			double value; // right value.
 			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
 			{
@@ -1684,7 +1682,7 @@ private:
 			}
 		};
 
-		struct swap_left_right : modify_base<swap_left_right> {
+		struct swap_left_right : modify_base {
 			double value_l, value_r; // original values on the both sides.
 			bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
 			{
@@ -1704,7 +1702,7 @@ private:
 			}
 		};
 
-		struct write_left_flat : modify_base<write_left_flat> {
+		struct write_left_flat : modify_base {
 			double value; // left value of the selected section.
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_l)
 			{
@@ -1724,7 +1722,7 @@ private:
 			}
 		};
 
-		struct write_right_flat : modify_base<write_right_flat> {
+		struct write_right_flat : modify_base {
 			double value; // right value of the selected section.
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_r)
 			{
@@ -1744,7 +1742,7 @@ private:
 			}
 		};
 
-		struct translate : modify_base<translate> {
+		struct translate : modify_base {
 			bool to_right;
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, bool right)
 			{
@@ -1764,12 +1762,8 @@ private:
 			}
 		};
 
-		template<class FinalT>
-		struct flip_base : modify_base<FinalT> {
+		struct flip_base : modify_base {
 		protected:
-			using cmd_base::denom, cmd_base::prec, cmd_base::min, cmd_base::max, cmd_base::mode; cmd_base::spec;
-			using cmd_base::append_menu, cmd_base::gray_out, cmd_base::has_adjacent_left, cmd_base::has_adjacent_right;
-
 			constexpr static int idx_easing_step = 3; // 「瞬間移動」
 			bool is_easing_step() const { return (mode.num & 0x0f) == idx_easing_step; }
 			bool append_core(HMENU menu, uint32_t id, wchar_t const* title,
@@ -1798,7 +1792,7 @@ private:
 			}
 		};
 
-		struct flip_left : flip_base<flip_left> {
+		struct flip_left : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
 				if (!append_core(menu, id, L"区間の左を中心に前後反転", obj, true, false)) return false;
@@ -1811,7 +1805,7 @@ private:
 			}
 		};
 
-		struct flip_middle : flip_base<flip_middle> {
+		struct flip_middle : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
 				if (!append_core(menu, id, L"この区間を中心に前後反転", obj, false, false)) return false;
@@ -1824,7 +1818,7 @@ private:
 			}
 		};
 
-		struct flip_right : flip_base<flip_right> {
+		struct flip_right : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
 				if (!append_core(menu, id, L"区間の右を中心に前後反転", obj, false, true)) return false;
@@ -1838,7 +1832,7 @@ private:
 			}
 		};
 
-		struct flip_entire : flip_base<flip_entire> {
+		struct flip_entire : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
 				if (!append_core(menu, id, L"全区間を前後反転", obj, false, false)) return false;
