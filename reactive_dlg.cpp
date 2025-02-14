@@ -1220,6 +1220,7 @@ private:
 		constexpr bool empty() const { return size() == 0; }
 		constexpr bool has_section() const { return section >= 0; }
 		formatted_valuespan span() const { return { values, section }; }
+		operator formatted_valuespan() const { return span(); }
 
 		formatted_values(std::vector<double>&& values, int section)
 			: values{ values }, section{ section }
@@ -1587,6 +1588,9 @@ private:
 				, max{ src.val_int_max }
 				, mode{ mode }
 				, spec{ easing_name_spec(mode).second } {}
+			int to_internal(double val) const {
+				return val_disp_to_int(val, denom, prec, min, max);
+			}
 		};
 		struct cmd_base {
 			track_info const& info;
@@ -1682,6 +1686,7 @@ private:
 				if ((info.mode.num & 0x0f) == 0 || (list.size() >= 3 && !list.has_section_full())) return false;
 
 				list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
+				list.discard_section();
 				append_menu(menu, id, L"区間の左右 (%s)",
 					list.to_string(info.prec, false, false).c_str());
 				return true;
@@ -1690,8 +1695,8 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// set values on the left and the right.
-				int val_l = val_disp_to_int(list.values.front(), info.denom, info.prec, info.min, info.max),
-					val_r = val_disp_to_int(list.values.back(), info.denom, info.prec, info.min, info.max);
+				int val_l = info.to_internal(list.values.front()),
+					val_r = info.to_internal(list.values.back());
 				if (values.size() > 2) {
 					values[pos] = val_l; values[pos + 1] = val_r;
 				}
@@ -1714,7 +1719,7 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// set the value on the left track.
-				int val = val_disp_to_int(list.values.front(), info.denom, info.prec, info.min, info.max);
+				int val = info.to_internal(list.values.front());
 				if (values.size() > 2) values[pos] = val;
 				else values.front() = val;
 			}
@@ -1735,7 +1740,7 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// set the value on the right track.
-				int val = val_disp_to_int(list.values.front(), info.denom, info.prec, info.min, info.max);
+				int val = info.to_internal(list.values.front());
 				if (values.size() > 2) values[pos + 1] = val;
 				else values.back() = val;
 			}
@@ -1758,7 +1763,7 @@ private:
 			{
 				// set values on the left half.
 				for (int p = std::max(pos - list.section, 0); p <= pos; p++)
-					values[p] = val_disp_to_int(list.values[p - pos + list.section], info.denom, info.prec, info.min, info.max);
+					values[p] = info.to_internal(list.values[p - pos + list.section]);
 			}
 		};
 
@@ -1780,7 +1785,7 @@ private:
 				// set values on the right half.
 				for (int p = pos + 1, N = std::min<int>(pos + list.size() - list.section, values.size());
 					p < N; p++)
-					values[p] = val_disp_to_int(list.values[p - pos + list.section], info.denom, info.prec, info.min, info.max);
+					values[p] = info.to_internal(list.values[p - pos + list.section]);
 			}
 		};
 
@@ -1802,7 +1807,7 @@ private:
 				for (int p = std::max(pos - list.section, 0),
 					N = std::min<int>(pos + list.size() - list.section, values.size());
 					p < N; p++)
-					values[p] = val_disp_to_int(list.values[p - pos + list.section], info.denom, info.prec, info.min, info.max);
+					values[p] = info.to_internal(list.values[p - pos + list.section]);
 			}
 		};
 
@@ -1824,7 +1829,28 @@ private:
 			{
 				// set the values for each interval.
 				for (int p = std::min<int>(list.size(), values.size()); --p >= 0;)
-					values[p] = val_disp_to_int(list.values[p], info.denom, info.prec, info.min, info.max);
+					values[p] = info.to_internal(list.values[p]);
+			}
+		};
+		struct paste_all_tailed : paste_base {
+			bool append(HMENU menu, uint32_t id)
+			{
+				if ((info.mode.num & 0x0f) == 0) return false;
+
+				// (...%s→%s→%s)
+				if (info.spec.twopoints)
+					list = list.trim_from_end(list.size() - 2, 0);
+				list.discard_section();
+				append_menu(menu, id, L"末尾基準で全て (%s)",
+					list.trim_from_end(list.size() - 3, 0).to_string(info.prec, !info.spec.twopoints, false).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set the values for each interval.
+				for (int p = values.size(), q = list.size(); --p >= 0 && --q >= 0;)
+					values[p] = info.to_internal(list.values[q]);
 			}
 		};
 
@@ -1901,7 +1927,7 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// copy the value to the left sections.
-				auto val = val_disp_to_int(value, info.denom, info.prec, info.min, info.max);
+				auto val = info.to_internal(value);
 				for (int p = 0; p < pos; p++) values[p] = val;
 			}
 		};
@@ -1921,7 +1947,7 @@ private:
 			void modify_values(int pos, std::vector<int>& values) const
 			{
 				// copy the value to the left sections.
-				auto val = val_disp_to_int(value, info.denom, info.prec, info.min, info.max);
+				auto val = info.to_internal(value);
 				for (int p = pos + 2; p < static_cast<int>(values.size()); p++) values[p] = val;
 			}
 		};
@@ -2045,6 +2071,7 @@ public:
 				paste_right_all,
 				paste_all,
 				paste_all_headed,
+				paste_all_tailed,
 
 				write_l2r,
 				write_r2l,
@@ -2083,33 +2110,37 @@ public:
 		copy.append(menu, menu_id::copy);
 
 		// parse the clipboard string for pasting.
-		formatted_values value_storage{ {}, -1 };
+		formatted_values values{ {}, -1 };
 		if (std::wstring str; sigma_lib::W32::clipboard::read(str) && !str.empty())
-			value_storage = { std::move(str) };
-		auto values = value_storage.span();
+			values = { std::move(str) };
 
-		menu_commands::paste_unique		paste_unique	{ info, values, };
-		menu_commands::paste_all_headed	paste_all_headed{ info, values, };
-		menu_commands::paste_all		paste_all		{ info, values, };
-		menu_commands::paste_left_all	paste_left_all	{ info, values, };
-		menu_commands::paste_left		paste_left		{ info, values, };
-		menu_commands::paste_two		paste_two		{ info, values, };
-		menu_commands::paste_right		paste_right		{ info, values, };
-		menu_commands::paste_right_all	paste_right_all	{ info, values, };
+		menu_commands::paste_unique		paste_unique	{ info, values };
+		menu_commands::paste_all_headed	paste_all_headed{ info, values };
+		menu_commands::paste_all		paste_all		{ info, values };
+		menu_commands::paste_all_tailed	paste_all_tailed{ info, values };
+		menu_commands::paste_left_all	paste_left_all	{ info, values };
+		menu_commands::paste_left		paste_left		{ info, values };
+		menu_commands::paste_two		paste_two		{ info, values };
+		menu_commands::paste_right		paste_right		{ info, values };
+		menu_commands::paste_right_all	paste_right_all	{ info, values };
 
 		if (values.size() > 0) {
 			if (!paste_unique	.append(menu, menu_id::paste_unique)) {
 				HMENU sub = ::CreatePopupMenu();
-				paste_all_headed.append(sub, menu_id::paste_all_headed);
-				paste_all		.append(sub, menu_id::paste_all,		obj);
+				if (values.size() != 2 || (!info.spec.twopoints && obj.index_midpt_leader >= 0)) {
+					// if not two-to-two pasting.
+					paste_all_headed.append(sub, menu_id::paste_all_headed);
+					paste_all		.append(sub, menu_id::paste_all, obj);
+					paste_all_tailed.append(sub, menu_id::paste_all_tailed);
+	
+					add_sep(sub);
+				}
 
-				add_sep(sub);
-
-				paste_left_all	.append(sub, menu_id::paste_left_all,	obj);
+				paste_left_all	.append(sub, menu_id::paste_left_all, obj);
 				paste_left		.append(sub, menu_id::paste_left);
 				paste_two		.append(sub, menu_id::paste_two);
 				paste_right		.append(sub, menu_id::paste_right);
-				paste_right_all	.append(sub, menu_id::paste_right_all,	obj);
+				paste_right_all	.append(sub, menu_id::paste_right_all, obj);
 
 				add_sub(menu, sub, menu_commands::paste_base::root_name);
 			}
@@ -2184,6 +2215,7 @@ public:
 		case menu_id::paste_right_all:	paste_right_all	.execute(obj, idx); return true;
 		case menu_id::paste_all:		paste_all		.execute(obj, idx); return true;
 		case menu_id::paste_all_headed:	paste_all_headed.execute(obj, idx); return true;
+		case menu_id::paste_all_tailed:	paste_all_tailed.execute(obj, idx); return true;
 
 		case menu_id::write_l2r:		write_l2r		.execute(obj, idx); return true;
 		case menu_id::write_r2l:		write_r2l		.execute(obj, idx); return true;
