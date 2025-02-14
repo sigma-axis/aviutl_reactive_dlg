@@ -1613,7 +1613,7 @@ private:
 			static void push_undo(Object const& obj)
 			{
 				exedit.nextundo();
-				exedit.setundo(&obj - (*exedit.ObjectArray_ptr), 0x01);
+				exedit.setundo(&obj - (*exedit.ObjectArray_ptr), 0x01); // 0x01: the entire chain.
 			}
 
 			// quickly determines whether there is a left object in the midpoint-chain.
@@ -1654,6 +1654,7 @@ private:
 			}
 		};
 		struct paste_base : modify_base {
+			constexpr static auto root_name = L"数値を貼り付け";
 			formatted_valuespan list;
 		};
 		struct paste_unique : paste_base {
@@ -1926,6 +1927,7 @@ private:
 		};
 
 		struct translate : modify_base {
+			constexpr static auto root_name = L"数値を平行移動";
 			bool to_right;
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, bool right)
 			{
@@ -1944,6 +1946,7 @@ private:
 		};
 
 		struct flip_base : modify_base {
+			constexpr static auto root_name = L"数値を前後反転";
 		protected:
 			constexpr static int idx_easing_step = 3; // 「瞬間移動」
 			bool is_easing_step() const { return (info.mode.num & 0x0f) == idx_easing_step; }
@@ -2058,9 +2061,14 @@ public:
 				flip_entire,
 			};
 		};
-		constexpr size_t npos = std::wstring_view::npos;
 		constexpr auto add_sep = [](HMENU menu) {
-			::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+			return ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+		};
+		constexpr auto add_sub = [](HMENU menu, HMENU sub, wchar_t const* name) {
+			return ::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), name);
+		};
+		constexpr auto add_gray = [](HMENU menu, wchar_t const* name) {
+			return ::AppendMenuW(menu, MF_GRAYED, menu_id::dismissed, name);
 		};
 
 		auto& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
@@ -2081,31 +2089,32 @@ public:
 		auto values = value_storage.span();
 
 		menu_commands::paste_unique		paste_unique	{ info, values, };
+		menu_commands::paste_all_headed	paste_all_headed{ info, values, };
+		menu_commands::paste_all		paste_all		{ info, values, };
 		menu_commands::paste_left_all	paste_left_all	{ info, values, };
 		menu_commands::paste_left		paste_left		{ info, values, };
 		menu_commands::paste_two		paste_two		{ info, values, };
 		menu_commands::paste_right		paste_right		{ info, values, };
 		menu_commands::paste_right_all	paste_right_all	{ info, values, };
-		menu_commands::paste_all		paste_all		{ info, values, };
-		menu_commands::paste_all_headed	paste_all_headed{ info, values, };
 
-		constexpr auto name_paste_root = L"数値を貼り付け";
 		if (values.size() > 0) {
 			if (!paste_unique	.append(menu, menu_id::paste_unique)) {
 				HMENU sub = ::CreatePopupMenu();
 				paste_all_headed.append(sub, menu_id::paste_all_headed);
-				paste_all		.append(sub, menu_id::paste_all, obj);
+				paste_all		.append(sub, menu_id::paste_all,		obj);
+
 				add_sep(sub);
-				paste_left_all	.append(sub, menu_id::paste_left_all, obj);
+
+				paste_left_all	.append(sub, menu_id::paste_left_all,	obj);
 				paste_left		.append(sub, menu_id::paste_left);
 				paste_two		.append(sub, menu_id::paste_two);
 				paste_right		.append(sub, menu_id::paste_right);
-				paste_right_all	.append(sub, menu_id::paste_right_all, obj);
+				paste_right_all	.append(sub, menu_id::paste_right_all,	obj);
 
-				::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), name_paste_root);
+				add_sub(menu, sub, menu_commands::paste_base::root_name);
 			}
 		}
-		else ::AppendMenuW(menu, MF_GRAYED, menu_id::dismissed, name_paste_root);
+		else add_gray(menu, menu_commands::paste_base::root_name);
 		
 		// commands for internal copying.
 		menu_commands::write_l2r		write_l2r		{ info };
@@ -2129,30 +2138,30 @@ public:
 		menu_commands::translate		trans_right		{ info };
 
 		// commands for flippings.
+		menu_commands::flip_entire		flip_entire		{ info };
 		menu_commands::flip_left		flip_left		{ info };
 		menu_commands::flip_middle		flip_middle		{ info };
 		menu_commands::flip_right		flip_right		{ info };
-		menu_commands::flip_entire		flip_entire		{ info };
 
-		constexpr auto name_translate_root = L"数値を平行移動";
-		constexpr auto name_flip_root = L"数値を前後反転";
 		if ((info.mode.num & 0x0f) != 0 && !info.spec.twopoints && obj.index_midpt_leader >= 0) {
 			add_sep(menu);
 
+			// translations as a submenu.
 			HMENU sub = ::CreatePopupMenu();
 			trans_left	.append(sub, menu_id::trans_left, obj, false);
 			trans_right	.append(sub, menu_id::trans_right, obj, true);
 
-			::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), name_translate_root);
+			add_sub(menu, sub, menu_commands::translate::root_name);
 
+			// flippings as a submenu.
 			sub = ::CreatePopupMenu();
-			flip_entire	.append(sub, menu_id::flip_entire, obj);
+			flip_entire	.append(sub, menu_id::flip_entire,	obj);
 			add_sep(sub);
-			flip_left	.append(sub, menu_id::flip_left, obj);
-			flip_middle	.append(sub, menu_id::flip_middle, obj);
-			flip_right	.append(sub, menu_id::flip_right, obj);
+			flip_left	.append(sub, menu_id::flip_left,	obj);
+			flip_middle	.append(sub, menu_id::flip_middle,	obj);
+			flip_right	.append(sub, menu_id::flip_right,	obj);
 
-			::AppendMenuW(menu, MF_POPUP, reinterpret_cast<uintptr_t>(sub), name_flip_root);
+			add_sub(menu, sub, menu_commands::flip_base::root_name);
 		}
 
 		// show a context menu
