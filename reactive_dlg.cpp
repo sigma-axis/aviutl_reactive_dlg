@@ -1598,14 +1598,14 @@ private:
 
 		protected:
 			// appends a menu item with a formatted title.
-			static void append_menu(HMENU menu, uint32_t id, wchar_t const* fmt, auto... params)
+			static void append_menu(HMENU menu, uint32_t id, bool grayed, wchar_t const* fmt, auto... params)
 			{
 				if constexpr (sizeof...(params) > 0) {
 					wchar_t buf[256];
 					::swprintf_s(buf, std::size(buf), fmt, params...);
-					append_menu(menu, id, buf);
+					append_menu(menu, id, grayed, buf);
 				}
-				else ::AppendMenuW(menu, MF_STRING, id, fmt);
+				else ::AppendMenuW(menu, MF_STRING | (grayed ? MF_GRAYED : 0), id, fmt);
 			}
 			// grays out the last added menu item.
 			static void gray_out(HMENU menu)
@@ -1636,7 +1636,7 @@ private:
 		struct copy : cmd_base {
 			bool append(HMENU menu, uint32_t id)
 			{
-				append_menu(menu, id, L"数値をコピー (&C)");
+				append_menu(menu, id, false, L"数値をコピー (&C)");
 				return true;
 			}
 
@@ -1659,7 +1659,7 @@ private:
 			}
 		};
 		struct paste_base : modify_base {
-			constexpr static auto root_name = L"数値を貼り付け";
+			constexpr static auto root_title = L"数値を貼り付け";
 			formatted_valuespan list;
 		};
 		struct paste_unique : paste_base {
@@ -1670,7 +1670,8 @@ private:
 				list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
 				list = list.trim_from_end(0, list.size() - 1);
 				list.discard_section();
-				append_menu(menu, id, L"数値を貼り付け (&V) (%s)", list.to_string(info.prec, false, false).c_str());
+				append_menu(menu, id, false, L"%s (&V) (%s)", root_title,
+					list.to_string(info.prec, false, false).c_str());
 				return true;
 			}
 
@@ -1682,15 +1683,18 @@ private:
 		};
 
 		struct paste_two : paste_base {
+			constexpr static auto menu_title = L"区間の左右";
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
-				if (!(list.size() <= 2 || list.has_section_full())) return false;
+				if (list.size() <= 2 || list.has_section_full()) {
+					list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
+					list.discard_section();
+					append_menu(menu, id, false, L"%s (%s)", menu_title,
+						list.to_string(info.prec, false, false).c_str());
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
-				list.discard_section();
-				append_menu(menu, id, L"区間の左右 (%s)",
-					list.to_string(info.prec, false, false).c_str());
 				return true;
 			}
 
@@ -1707,15 +1711,19 @@ private:
 		};
 
 		struct paste_left : paste_base {
+			constexpr static auto menu_title = L"区間の左だけ";
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
-				if (!(list.size() <= 2 || list.has_section_full())) return false;
+				if (list.size() <= 2 || list.has_section_full()) {
+					list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
+					list = list.trim_from_end(0, list.size() - 1);
+					list.discard_section();
+					append_menu(menu, id, false, L"%s (%s)", menu_title,
+						list.to_string(info.prec, false, false).c_str());
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
-				list = list.trim_from_end(0, list.size() - 1);
-				list.discard_section();
-				append_menu(menu, id, L"区間の左だけ (%s)", list.to_string(info.prec, false, false).c_str());
 				return true;
 			}
 
@@ -1729,15 +1737,19 @@ private:
 		};
 
 		struct paste_right : paste_base {
+			constexpr static auto menu_title = L"区間の右だけ";
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
-				if (!(list.size() <= 2 || list.has_section_full())) return false;
+				if (list.size() <= 2 || list.has_section_full()) {
+					list = list.has_section_full() ? list.trim_from_sect_r(0) : list;
+					list = list.trim_from_end(list.size() - 1, 0);
+					list.discard_section();
+					append_menu(menu, id, false, L"%s (%s)", menu_title,
+						list.to_string(info.prec, false, false).c_str());
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				list = list.has_section_full() ? list.trim_from_sect_r(0) : list;
-				list = list.trim_from_end(list.size() - 1, 0);
-				list.discard_section();
-				append_menu(menu, id, L"区間の右だけ (%s)", list.to_string(info.prec, false, false).c_str());
 				return true;
 			}
 
@@ -1751,16 +1763,19 @@ private:
 		};
 
 		struct paste_left_all : paste_base {
+			constexpr static auto menu_title = L"区間基準で左半分";
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
-				if (info.spec.twopoints || !has_adjacent_left(obj)) return false;
-				if (!list.has_section_full() || list.section <= 0) return false;
+				if (!info.spec.twopoints && has_adjacent_left(obj) &&
+					list.has_section_full() && list.section > 0) {
+					// (...%s→%s→[ %s ])
+					if (list.has_section_full()) list = list.trim_from_sect_r(-1);
+					append_menu(menu, id, false, L"%s (%s)", menu_title,
+						list.trim_from_end(list.size() - 3, 0).to_string(info.prec, true, false).c_str());
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				// (...%s→%s→[ %s ])
-				if (list.has_section_full()) list = list.trim_from_sect_r(-1);
-				append_menu(menu, id, L"区間基準で左半分 (%s)",
-					list.trim_from_end(list.size() - 3, 0).to_string(info.prec, true, false).c_str());
 				return true;
 			}
 
@@ -1773,16 +1788,19 @@ private:
 		};
 
 		struct paste_right_all : paste_base {
+			constexpr static auto menu_title = L"区間基準で右半分";
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
-				if (info.spec.twopoints || !has_adjacent_right(obj)) return false;
-				if (!list.has_section_full() || list.section + 2 >= list.size()) return false;
+				if (!info.spec.twopoints && has_adjacent_right(obj) &&
+					list.has_section_full() && list.section + 2 < list.size()) {
+					// ([ %s ]→%s→%s...)
+					if (list.has_section_full()) list = list.trim_from_sect_l(-1);
+					append_menu(menu, id, false, L"%s (%s)", menu_title,
+						list.trim_from_end(0, list.size() - 3).to_string(info.prec, false, true).c_str());
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				// ([ %s ]→%s→%s...)
-				if (list.has_section_full()) list = list.trim_from_sect_l(-1);
-				append_menu(menu, id, L"区間基準で右半分 (%s)",
-					list.trim_from_end(0, list.size() - 3).to_string(info.prec, false, true).c_str());
 				return true;
 			}
 
@@ -1796,15 +1814,18 @@ private:
 		};
 
 		struct paste_all : paste_base {
+			constexpr static auto menu_title = L"この区間基準";
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
 				if (info.spec.twopoints || obj.index_midpt_leader < 0) return false;
-				if (!(list.size() > 2 || list.has_section_full())) return false;
+				if (list.has_section_full()) {
+					// (...%s→[ %s→%s ]→%s...)
+					append_menu(menu, id, false, L"%s (%s)", menu_title,
+						list.trim_from_sect(1, 1).to_string(info.prec, true, true).c_str());
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				// (...%s→[ %s→%s ]→%s...)
-				append_menu(menu, id, L"この区間基準 (%s)",
-					list.trim_from_sect(1, 1).to_string(info.prec, true, true).c_str());
 				return true;
 			}
 
@@ -1822,14 +1843,14 @@ private:
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
-				if (!(list.size() > 1)) return false;
 
 				// (%s→%s→%s...)
 				if (info.spec.twopoints)
 					list = list.trim_from_end(0, list.size() - 2);
 				list.discard_section();
-				append_menu(menu, id, L"先頭から順に (%s)",
+				append_menu(menu, id, false, L"%s (%s)", list.size() == 1 ? L"先頭だけ" : L"先頭から順に",
 					list.trim_from_end(0, list.size() - 3).to_string(info.prec, false, !info.spec.twopoints).c_str());
+
 				return true;
 			}
 
@@ -1844,13 +1865,12 @@ private:
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
-				if (!(list.size() > 1)) return false;
 
 				// (...%s→%s→%s)
 				if (info.spec.twopoints)
 					list = list.trim_from_end(list.size() - 2, 0);
 				list.discard_section();
-				append_menu(menu, id, L"末尾から順に (%s)",
+				append_menu(menu, id, false, L"%s (%s)", list.size() == 1 ? L"末尾だけ" : L"末尾から順に",
 					list.trim_from_end(list.size() - 3, 0).to_string(info.prec, !info.spec.twopoints, false).c_str());
 				return true;
 			}
@@ -1862,14 +1882,14 @@ private:
 					values[p] = info.to_internal(list.values[q]);
 			}
 		};
-		struct paste_all_unif : paste_base {
+		struct paste_uniform : paste_base {
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
 				if (list.size() != 1) return false;
 
 				list.discard_section();
-				append_menu(menu, id, L"全区間一律に (%s)",
+				append_menu(menu, id, false, L"全区間一律に (%s)",
 					list.to_string(info.prec, false, false).c_str());
 				return true;
 			}
@@ -1881,6 +1901,46 @@ private:
 				for (auto& v : values) v = val;
 			}
 		};
+		struct paste_uniform_l : paste_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
+			{
+				if (!info.has_easing()) return false;
+				if (list.size() != 1) return false;
+				if (!has_adjacent_left(obj)) return false;
+
+				list.discard_section();
+				append_menu(menu, id, false, L"区間から左を一律に (%s)",
+					list.to_string(info.prec, false, false).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set the values for all intervals uniformly.
+				auto val = info.to_internal(list.values.front());
+				for (auto& v : std::span{ values }.subspan(0, pos + 1)) v = val;
+			}
+		};
+		struct paste_uniform_r : paste_base {
+			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
+			{
+				if (!info.has_easing()) return false;
+				if (list.size() != 1) return false;
+				if (!has_adjacent_right(obj)) return false;
+
+				list.discard_section();
+				append_menu(menu, id, false, L"区間から右を一律に (%s)",
+					list.to_string(info.prec, false, false).c_str());
+				return true;
+			}
+
+			void modify_values(int pos, std::vector<int>& values) const
+			{
+				// set the values for all intervals uniformly.
+				auto val = info.to_internal(list.values.front());
+				for (auto& v : std::span{ values }.subspan(pos + 1)) v = val;
+			}
+		};
 
 		struct write_l2r : modify_base {
 			double value; // left value.
@@ -1889,7 +1949,7 @@ private:
 				if (!info.has_easing()) return false;
 
 				value = info_l.value();
-				append_menu(menu, id, L"上書き: 左\u25b7右 (%.*f)", // White Right-Pointing Triangle
+				append_menu(menu, id, false, L"上書き: 左\u25b7右 (%.*f)", // White Right-Pointing Triangle
 					static_cast<int>(0.5 + std::log10(info.prec)), value);
 				return true;
 			}
@@ -1908,7 +1968,7 @@ private:
 				if (!info.has_easing()) return false;
 
 				value = info_r.value();
-				append_menu(menu, id, L"上書き: 左\u25c1右 (%.*f)", // White Left-Pointing Triangle
+				append_menu(menu, id, false, L"上書き: 左\u25c1右 (%.*f)", // White Left-Pointing Triangle
 					static_cast<int>(0.5 + std::log10(info.prec)), value);
 				return true;
 			}
@@ -1928,7 +1988,7 @@ private:
 
 				value_l = info_l.value(); value_r = info_r.value();
 				int prec_len = static_cast<int>(0.5 + std::log10(info.prec));
-				append_menu(menu, id, L"入替え: 左\u2194右 (%.*f\u2194%.*f)", // Left Right Arrow
+				append_menu(menu, id, false, L"入替え: 左\u2194右 (%.*f\u2194%.*f)", // Left Right Arrow
 					prec_len, value_l, prec_len, value_r);
 				return true;
 			}
@@ -1941,15 +2001,18 @@ private:
 		};
 
 		struct write_left_flat : modify_base {
+			constexpr static auto menu_title = L"左の区間を一律に";
 			double value; // left value of the selected section.
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_l)
 			{
 				if (!info.has_easing()) return false;
-				if (info.spec.twopoints || !has_adjacent_left(obj)) return false;
+				if (!info.spec.twopoints && has_adjacent_left(obj)) {
+					value = info_l.value();
+					append_menu(menu, id, false, L"%s (%.*f)", menu_title,
+						static_cast<int>(0.5 + std::log10(info.prec)), value);
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				value = info_l.value();
-				append_menu(menu, id, L"左の区間を全て %.*f に",
-					static_cast<int>(0.5 + std::log10(info.prec)), value);
 				return true;
 			}
 
@@ -1962,15 +2025,18 @@ private:
 		};
 
 		struct write_right_flat : modify_base {
+			constexpr static auto menu_title = L"右の区間を一律に";
 			double value; // right value of the selected section.
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_r)
 			{
 				if (!info.has_easing()) return false;
-				if (info.spec.twopoints || !has_adjacent_right(obj)) return false;
+				if (!info.spec.twopoints && has_adjacent_right(obj)) {
+					value = info_r.value();
+					append_menu(menu, id, false, L"%s (%.*f)", menu_title,
+						static_cast<int>(0.5 + std::log10(info.prec)), value);
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				value = info_r.value();
-				append_menu(menu, id, L"右の区間を全て %.*f に",
-					static_cast<int>(0.5 + std::log10(info.prec)), value);
 				return true;
 			}
 
@@ -1983,7 +2049,7 @@ private:
 		};
 
 		struct translate : modify_base {
-			constexpr static auto root_name = L"数値を平行移動";
+			constexpr static auto root_title = L"数値を平行移動";
 			bool to_right;
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, bool right)
 			{
@@ -1991,7 +2057,7 @@ private:
 				if (info.spec.twopoints || obj.index_midpt_leader < 0) return false;
 
 				to_right = right;
-				append_menu(menu, id, to_right ? L"右へ区間1つ分" : L"左へ区間1つ分");
+				append_menu(menu, id, false, to_right ? L"右へ区間1つ分" : L"左へ区間1つ分");
 				return true;
 			}
 
@@ -2003,7 +2069,7 @@ private:
 		};
 
 		struct flip_base : modify_base {
-			constexpr static auto root_name = L"数値を前後反転";
+			constexpr static auto root_title = L"数値を前後反転";
 		protected:
 			constexpr static int idx_easing_step = 3; // 「瞬間移動」
 			bool is_easing_step() const { return (info.mode.num & 0x0f) == idx_easing_step; }
@@ -2013,9 +2079,9 @@ private:
 				if (!info.has_easing()) return false;
 				if (info.spec.twopoints || obj.index_midpt_leader < 0) return false;
 
-				append_menu(menu, id, title);
-				if ((require_left && !has_adjacent_left(obj)) ||
-					(require_right && !has_adjacent_right(obj))) gray_out(menu);
+				append_menu(menu, id,
+					(require_left && !has_adjacent_left(obj)) ||
+					(require_right && !has_adjacent_right(obj)), title);
 				return true;
 			}
 
@@ -2076,7 +2142,7 @@ private:
 		struct flip_entire : flip_base {
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
-				if (!append_core(menu, id, L"オブジェクト全体", obj, false, false)) return false;
+				if (!append_core(menu, id, L"オブジェクトまるごと", obj, false, false)) return false;
 				return true;
 			}
 
@@ -2104,7 +2170,9 @@ public:
 				paste_all,
 				paste_all_headed,
 				paste_all_tailed,
-				paste_all_unif,
+				paste_uniform,
+				paste_uniform_l,
+				paste_uniform_r,
 
 				write_l2r,
 				write_r2l,
@@ -2152,7 +2220,9 @@ public:
 			values = { std::move(str) };
 
 		mc::paste_unique		paste_unique	{ info, values };
-		mc::paste_all_unif		paste_all_unif	{ info, values };
+		mc::paste_uniform		paste_uniform	{ info, values };
+		mc::paste_uniform_l		paste_uniform_l	{ info, values };
+		mc::paste_uniform_r		paste_uniform_r	{ info, values };
 		mc::paste_all_headed	paste_all_headed{ info, values };
 		mc::paste_all			paste_all		{ info, values };
 		mc::paste_all_tailed	paste_all_tailed{ info, values };
@@ -2165,10 +2235,17 @@ public:
 		if (values.size() > 0) {
 			if (!paste_unique	.append(menu, menu_id::paste_unique)) {
 				HMENU sub = ::CreatePopupMenu();
+				if (values.size() == 1) {
+					paste_uniform	.append(sub, menu_id::paste_uniform);
+					paste_uniform_l	.append(sub, menu_id::paste_uniform_l, obj);
+					paste_uniform_r	.append(sub, menu_id::paste_uniform_r, obj);
+
+					add_sep(sub);
+				}
+
 				paste_all_headed.append(sub, menu_id::paste_all_headed);
 				paste_all		.append(sub, menu_id::paste_all, obj);
 				paste_all_tailed.append(sub, menu_id::paste_all_tailed);
-				paste_all_unif	.append(sub, menu_id::paste_all_unif);
 
 				add_sep(sub);
 
@@ -2180,10 +2257,10 @@ public:
 				b |= paste_right_all.append(sub, menu_id::paste_right_all, obj);
 				if (!b) pop_tail(sub);
 
-				add_sub(menu, sub, mc::paste_base::root_name);
+				add_sub(menu, sub, mc::paste_base::root_title);
 			}
 		}
-		else add_gray(menu, mc::paste_base::root_name);
+		else add_gray(menu, mc::paste_base::root_title);
 		
 		// commands for internal copying.
 		mc::write_l2r			write_l2r		{ info };
@@ -2192,7 +2269,7 @@ public:
 		mc::write_left_flat		write_left_flat	{ info };
 		mc::write_right_flat	write_right_flat{ info };
 
-		if ((info.mode.num & 0x0f) != 0) {
+		if (info.has_easing()) {
 			add_sep(menu);
 
 			write_l2r		.append(menu, menu_id::write_l2r, exedit.trackinfo_left[idx], exedit.trackinfo_right[idx]);
@@ -2212,7 +2289,7 @@ public:
 		mc::flip_middle		flip_middle		{ info };
 		mc::flip_right		flip_right		{ info };
 
-		if ((info.mode.num & 0x0f) != 0 && !info.spec.twopoints && obj.index_midpt_leader >= 0) {
+		if (info.has_easing() && !info.spec.twopoints && obj.index_midpt_leader >= 0) {
 			add_sep(menu);
 
 			// translations as a submenu.
@@ -2220,7 +2297,7 @@ public:
 			trans_left	.append(sub, menu_id::trans_left, obj, false);
 			trans_right	.append(sub, menu_id::trans_right, obj, true);
 
-			add_sub(menu, sub, mc::translate::root_name);
+			add_sub(menu, sub, mc::translate::root_title);
 
 			// flippings as a submenu.
 			sub = ::CreatePopupMenu();
@@ -2230,7 +2307,7 @@ public:
 			flip_middle	.append(sub, menu_id::flip_middle,	obj);
 			flip_right	.append(sub, menu_id::flip_right,	obj);
 
-			add_sub(menu, sub, mc::flip_base::root_name);
+			add_sub(menu, sub, mc::flip_base::root_title);
 		}
 
 		// show a context menu
@@ -2254,7 +2331,9 @@ public:
 		case menu_id::paste_all:		paste_all		.execute(obj, idx); return true;
 		case menu_id::paste_all_headed:	paste_all_headed.execute(obj, idx); return true;
 		case menu_id::paste_all_tailed:	paste_all_tailed.execute(obj, idx); return true;
-		case menu_id::paste_all_unif:	paste_all_unif	.execute(obj, idx); return true;
+		case menu_id::paste_uniform:	paste_uniform	.execute(obj, idx); return true;
+		case menu_id::paste_uniform_l:	paste_uniform_l	.execute(obj, idx); return true;
+		case menu_id::paste_uniform_r:	paste_uniform_r	.execute(obj, idx); return true;
 
 		case menu_id::write_l2r:		write_l2r		.execute(obj, idx); return true;
 		case menu_id::write_r2l:		write_r2l		.execute(obj, idx); return true;
