@@ -1456,8 +1456,8 @@ public:
 					RECT rc;
 					::GetWindowRect(tooltip, &rc);
 					::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
-					rc.right = rc.left + content.w;
-					rc.bottom = rc.top + content.h;
+					rc.right = rc.left + content.w + 2; // add slight extra spaces on the right and the bottom.
+					rc.bottom = rc.top + content.h + 1;
 					::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
 					rc = sigma_lib::W32::monitor{ rc }.expand(-8).clamp<true>(rc); // clamp into the screen area.
 					::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
@@ -1514,7 +1514,7 @@ public:
 						if (!content.easing.empty())
 							::DrawTextW(dhdr->nmcd.hdc, content.easing.c_str(), content.easing.size(), &rc, draw_text_options);
 						if (!content.values.empty()) {
-							rc.top = content.h2;
+							rc.top += content.h2;
 							::DrawTextW(dhdr->nmcd.hdc, content.values.c_str(), content.values.size(), &rc, draw_text_options);
 						}
 					}

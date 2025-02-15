@@ -37,7 +37,7 @@ namespace sigma_lib::W32
 			if (auto h = ::GetClipboardData(CF_UNICODETEXT); h != nullptr) {
 				if (auto ptr = reinterpret_cast<wchar_t const*>(::GlobalLock(h)); ptr != nullptr) {
 					// copy the data from the global memory.
-					dst = std::wstring{ ptr };
+					dst = ptr;
 					::GlobalUnlock(h);
 
 					success = true;
