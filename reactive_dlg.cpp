@@ -1902,15 +1902,18 @@ private:
 			}
 		};
 		struct paste_uniform_l : paste_base {
+			constexpr static auto menu_title = L"区間から左を一律に";
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
 				if (list.size() != 1) return false;
-				if (!has_adjacent_left(obj)) return false;
+				if (!info.spec.twopoints && has_adjacent_left(obj)) {
+					list.discard_section();
+					append_menu(menu, id, false, L"%s (%s)", menu_title,
+						list.to_string(info.prec, false, false).c_str());
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				list.discard_section();
-				append_menu(menu, id, false, L"区間から左を一律に (%s)",
-					list.to_string(info.prec, false, false).c_str());
 				return true;
 			}
 
@@ -1922,15 +1925,18 @@ private:
 			}
 		};
 		struct paste_uniform_r : paste_base {
+			constexpr static auto menu_title = L"区間から右を一律に";
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
 				if (list.size() != 1) return false;
-				if (!has_adjacent_right(obj)) return false;
+				if (!info.spec.twopoints && has_adjacent_right(obj)) {
+					list.discard_section();
+					append_menu(menu, id, false, L"%s (%s)", menu_title,
+						list.to_string(info.prec, false, false).c_str());
+				}
+				else append_menu(menu, id, true, menu_title);
 
-				list.discard_section();
-				append_menu(menu, id, false, L"区間から右を一律に (%s)",
-					list.to_string(info.prec, false, false).c_str());
 				return true;
 			}
 
@@ -2237,25 +2243,31 @@ public:
 				HMENU sub = ::CreatePopupMenu();
 				if (values.size() == 1) {
 					paste_uniform	.append(sub, menu_id::paste_uniform);
-					paste_uniform_l	.append(sub, menu_id::paste_uniform_l, obj);
-					paste_uniform_r	.append(sub, menu_id::paste_uniform_r, obj);
 
 					add_sep(sub);
+
+					paste_all_headed.append(sub, menu_id::paste_all_headed);
+					paste_uniform_l	.append(sub, menu_id::paste_uniform_l, obj);
+					paste_left		.append(sub, menu_id::paste_left);
+					paste_two		.append(sub, menu_id::paste_two);
+					paste_right		.append(sub, menu_id::paste_right);
+					paste_uniform_r	.append(sub, menu_id::paste_uniform_r, obj);
+					paste_all_tailed.append(sub, menu_id::paste_all_tailed);
+				}
+				else {
+					paste_all_headed.append(sub, menu_id::paste_all_headed);
+					paste_all		.append(sub, menu_id::paste_all, obj);
+					paste_all_tailed.append(sub, menu_id::paste_all_tailed);
+
+					add_sep(sub);
+
+					paste_left_all	.append(sub, menu_id::paste_left_all, obj);
+					paste_left		.append(sub, menu_id::paste_left);
+					paste_two		.append(sub, menu_id::paste_two);
+					paste_right		.append(sub, menu_id::paste_right);
+					paste_right_all	.append(sub, menu_id::paste_right_all, obj);
 				}
 
-				paste_all_headed.append(sub, menu_id::paste_all_headed);
-				paste_all		.append(sub, menu_id::paste_all, obj);
-				paste_all_tailed.append(sub, menu_id::paste_all_tailed);
-
-				add_sep(sub);
-
-				bool b = false;
-				b |= paste_left_all	.append(sub, menu_id::paste_left_all, obj);
-				b |= paste_left		.append(sub, menu_id::paste_left);
-				b |= paste_two		.append(sub, menu_id::paste_two);
-				b |= paste_right	.append(sub, menu_id::paste_right);
-				b |= paste_right_all.append(sub, menu_id::paste_right_all, obj);
-				if (!b) pop_tail(sub);
 
 				add_sub(menu, sub, mc::paste_base::root_title);
 			}
