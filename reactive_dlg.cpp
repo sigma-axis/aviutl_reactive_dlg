@@ -38,6 +38,7 @@ using namespace ExEdit;
 #include "slim_formatter.hpp"
 #include "memory_protect.hpp"
 #include "clipboard.hpp"
+#include "monitors.hpp"
 
 
 ////////////////////////////////
@@ -1458,9 +1459,7 @@ public:
 					rc.right = rc.left + content.w;
 					rc.bottom = rc.top + content.h;
 					::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
-
-					// TODO: adjust the position not to clip on edges of the screen.
-
+					rc = sigma_lib::W32::monitor{ rc }.expand(-8).clamp<true>(rc); // clamp into the screen area.
 					::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
 						rc.right - rc.left, rc.bottom - rc.top,
 						SWP_NOZORDER | SWP_NOACTIVATE);

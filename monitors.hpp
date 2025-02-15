@@ -67,6 +67,16 @@ namespace sigma_lib::W32
 			return { x,y };
 		}
 
+		constexpr monitor& expand(int left, int top, int right, int bottom) {
+			bd_full.left -= left; bd_work.left -= left;
+			bd_full.top -= top; bd_work.top -= top;
+			bd_full.right += right; bd_work.right += right;
+			bd_full.bottom += bottom; bd_work.bottom += bottom;
+			return *this;
+		}
+		constexpr monitor& expand(int horiz, int vert) { return expand(horiz, vert, horiz, vert); }
+		constexpr monitor& expand(int len) { return expand(len, len); }
+
 	private:
 		constexpr static auto clamp(int x, int y, RECT const& rc)
 		{
@@ -83,12 +93,11 @@ namespace sigma_lib::W32
 		}
 		constexpr static std::pair<int, int> clamp(int lbd, int ubd, int min, int max)
 		{
-			if (ubd - lbd > max - min)
-				return { lbd, ubd }; // leave unchanged.
-			else if (lbd < min)
-				return { min, ubd + min - lbd };
-			else if (ubd > max)
-				return { lbd + max - ubd, max };
+			bool oversized = ubd - lbd > max - min;
+			if ((lbd < min) ^ oversized)
+				return { min, min + ubd - lbd };
+			else if ((ubd > max) ^ oversized)
+				return { max + lbd - ubd, max };
 			else return { lbd, ubd };
 		}
 	};
