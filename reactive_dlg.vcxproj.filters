@@ -27,6 +27,9 @@
     <ClInclude Include="clipboard.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="monitors.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="reactive_dlg.cpp">
