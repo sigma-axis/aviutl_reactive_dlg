@@ -25,73 +25,70 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 ////////////////////////////////
 namespace sigma_lib::W32
 {
+	template<bool work, uint32_t default_to = MONITOR_DEFAULTTONEAREST>
 	struct monitor {
 		// work area: the portion of the screen excluding the task bar area (and maybe others).
-		RECT bd_full, bd_work;
+		RECT bound;
 		bool is_primary;
 
-		monitor(int x, int y) : monitor(POINT{ x, y }) {}
-		explicit monitor(POINT const& point) : monitor(::MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST)) {}
-		monitor(int left, int top, int right, int bottom) : monitor(RECT{ left, top, right, bottom }) {}
-		explicit monitor(RECT const& rect) : monitor(::MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST)) {}
-		explicit monitor(HWND hwnd) : monitor(::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)) {}
+		explicit monitor(int x, int y) : monitor(POINT{ x, y }) {}
+		explicit monitor(POINT const& point) : monitor(::MonitorFromPoint(point, default_to)) {}
+		explicit monitor(int left, int top, int right, int bottom) : monitor(RECT{ left, top, right, bottom }) {}
+		explicit monitor(RECT const& rect) : monitor(::MonitorFromRect(&rect, default_to)) {}
+		explicit monitor(HWND hwnd) : monitor(::MonitorFromWindow(hwnd, default_to)) {}
 
-		monitor(HMONITOR monitor) {
+		monitor(HMONITOR monitor = nullptr)
+		{
 			MONITORINFO mi{ .cbSize = sizeof(mi) };
-			::GetMonitorInfoW(monitor, &mi);
-			bd_full = mi.rcMonitor;
-			bd_work = mi.rcWork;
+			::GetMonitorInfoW(monitor == nullptr ?
+				::MonitorFromPoint({ 0, 0 }, MONITOR_DEFAULTTOPRIMARY) : // yields primary.
+				monitor, &mi);
+			if constexpr (work) bound = mi.rcWork;
+			else bound = mi.rcMonitor;
 			is_primary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
 		}
 
-		template<bool work>
-		constexpr auto clamp(int left, int top, int right, int bottom) const
-		{
-			if constexpr (work) return clamp(left, top, right, bottom, bd_work);
-			else return clamp(left, top, right, bottom, bd_full);
+		constexpr auto clamp(int left, int top, int right, int bottom) const {
+			return clamp_core(left, top, right, bottom, bound);
 		}
-		template<bool work>
 		constexpr RECT clamp(RECT const& rect) const {
-			auto [l, t, r, b] = clamp<work>(rect.left, rect.top, rect.right, rect.bottom);
+			auto [l, t, r, b] = clamp(rect.left, rect.top, rect.right, rect.bottom);
 			return { l, t, r, b };
 		}
-		template<bool work>
-		constexpr auto clamp(int x, int y) const
-		{
-			if constexpr (work) return clamp(x, y, bd_work);
-			else return clamp(x, y, bd_full);
+		constexpr auto clamp(int x, int y) const {
+			return clamp_core(x, y, bound);
 		}
-		template<bool work>
 		constexpr POINT clamp(POINT const& point) const {
-			auto [x, y] = clamp<work>(point.x, point.y);
-			return { x,y };
+			auto [x, y] = clamp(point.x, point.y);
+			return { x, y };
 		}
 
-		constexpr monitor& expand(int left, int top, int right, int bottom) {
-			bd_full.left -= left; bd_work.left -= left;
-			bd_full.top -= top; bd_work.top -= top;
-			bd_full.right += right; bd_work.right += right;
-			bd_full.bottom += bottom; bd_work.bottom += bottom;
+		constexpr monitor& expand(int left, int top, int right, int bottom)
+		{
+			bound.left -= left;
+			bound.top -= top;
+			bound.right += right;
+			bound.bottom += bottom;
 			return *this;
 		}
 		constexpr monitor& expand(int horiz, int vert) { return expand(horiz, vert, horiz, vert); }
 		constexpr monitor& expand(int len) { return expand(len, len); }
 
 	private:
-		constexpr static auto clamp(int x, int y, RECT const& rc)
+		constexpr static auto clamp_core(int x, int y, RECT const& rc)
 		{
 			return std::pair{
 				std::clamp<int>(x, rc.left, rc.right),
 				std::clamp<int>(y, rc.top, rc.bottom)
 			};
 		}
-		constexpr static auto clamp(int left, int top, int right, int bottom, RECT const& rc)
+		constexpr static auto clamp_core(int left, int top, int right, int bottom, RECT const& rc)
 		{
-			auto [l, r] = clamp(left, right, rc.left, rc.right);
-			auto [t, b] = clamp(top, bottom, rc.top, rc.bottom);
+			auto [l, r] = clamp_core(left, right, rc.left, rc.right);
+			auto [t, b] = clamp_core(top, bottom, rc.top, rc.bottom);
 			return std::tuple{ l, t, r, b };
 		}
-		constexpr static std::pair<int, int> clamp(int lbd, int ubd, int min, int max)
+		constexpr static std::pair<int, int> clamp_core(int lbd, int ubd, int min, int max)
 		{
 			bool oversized = ubd - lbd > max - min;
 			if ((lbd < min) ^ oversized)

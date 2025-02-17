@@ -1459,7 +1459,8 @@ public:
 					rc.right = rc.left + content.w + 2; // add slight extra spaces on the right and the bottom.
 					rc.bottom = rc.top + content.h + 1;
 					::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
-					rc = sigma_lib::W32::monitor{ rc }.expand(-8).clamp<true>(rc); // clamp into the screen area.
+					rc = sigma_lib::W32::monitor<true>{ rc.left, rc.top }
+						.expand(-8).clamp(rc); // clamp into the screen area with 8 pixels of padding.
 					::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
 						rc.right - rc.left, rc.bottom - rc.top,
 						SWP_NOZORDER | SWP_NOACTIVATE);
