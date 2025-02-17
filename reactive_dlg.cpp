@@ -1338,7 +1338,7 @@ private:
 	}
 	// applies internal values of the trackbar in the midpoint-chain.
 	// the caller must handle undo buffer beforehand.
-	static void apply_int_values(int pos_obj, std::vector<int> const& chain, std::vector<int> const& values, size_t idx_track)
+	static void apply_int_values(std::vector<int> const& chain, std::vector<int> const& values, size_t idx_track)
 	{
 		auto* const objects = *exedit.ObjectArray_ptr;
 		auto& leading = objects[chain.front()];
@@ -1352,9 +1352,6 @@ private:
 				auto& o = objects[i];
 				o.track_value_left[idx_track] = o.track_value_right[idx_track] = val_l;
 			}
-
-			exedit.trackinfo_left[idx_track].val_int_curr
-				= exedit.trackinfo_right[idx_track].val_int_curr = val_l;
 		}
 		else if (chain.size() == 1 || spec.twopoints) {
 			// handle only two points.
@@ -1364,9 +1361,6 @@ private:
 				o.track_value_left[idx_track] = val_l;
 				o.track_value_right[idx_track] = val_r;
 			}
-
-			exedit.trackinfo_left[idx_track].val_int_curr = val_l;
-			exedit.trackinfo_right[idx_track].val_int_curr = val_r;
 		}
 		else {
 			// common cases.
@@ -1375,11 +1369,6 @@ private:
 				auto& o = objects[chain[pos]];
 				o.track_value_left[idx_track] = val_l;
 				o.track_value_right[idx_track] = val_r;
-
-				if (pos == pos_obj) {
-					exedit.trackinfo_left[idx_track].val_int_curr = val_l;
-					exedit.trackinfo_right[idx_track].val_int_curr = val_r;
-				}
 
 				// update val_l.
 				val_l = val_r;
@@ -1495,9 +1484,11 @@ public:
 						// measure these text and determine the size.
 						RECT rc1{}, rc2{};
 						if (!content.easing.empty())
-							::DrawTextW(dhdr->nmcd.hdc, content.easing.c_str(), content.easing.size(), &rc1, DT_CALCRECT | draw_text_options);
+							::DrawTextW(dhdr->nmcd.hdc, content.easing.c_str(), content.easing.size(),
+								&rc1, DT_CALCRECT | draw_text_options);
 						if (!content.values.empty())
-							::DrawTextW(dhdr->nmcd.hdc, content.values.c_str(), content.values.size(), &rc2, DT_CALCRECT | draw_text_options);
+							::DrawTextW(dhdr->nmcd.hdc, content.values.c_str(), content.values.size(),
+								&rc2, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
 						content.w = std::max(rc1.right - rc1.left, rc2.right - rc2.left);
 						content.h2 = rc1.bottom - rc1.top;
 						if (!content.values.empty()) content.h2 += gap_h;
@@ -1513,10 +1504,12 @@ public:
 						// actual drawing, using content.easing and content.values.
 						RECT rc{ dhdr->nmcd.rc };
 						if (!content.easing.empty())
-							::DrawTextW(dhdr->nmcd.hdc, content.easing.c_str(), content.easing.size(), &rc, draw_text_options);
+							::DrawTextW(dhdr->nmcd.hdc, content.easing.c_str(), content.easing.size(),
+								&rc, draw_text_options);
 						if (!content.values.empty()) {
 							rc.top += content.h2;
-							::DrawTextW(dhdr->nmcd.hdc, content.values.c_str(), content.values.size(), &rc, draw_text_options);
+							::DrawTextW(dhdr->nmcd.hdc, content.values.c_str(), content.values.size(),
+								&rc, draw_text_options | DT_SINGLELINE);
 						}
 					}
 					break;
@@ -1579,16 +1572,25 @@ private:
 	struct menu_commands {
 		struct track_info {
 			int denom, prec, min, max;
-			Object::TrackMode mode; easing_spec spec;
+			constexpr bool has_easing() const { return !is_none; }
+			constexpr bool is_ease_step() const { return is_step; }
+			constexpr bool is_ease_twopoints() const { return is_twopoints; }
 
+		private:
+			bool is_none, is_step, is_twopoints;
+			constexpr static int
+				idx_easing_none = 0,
+				idx_easing_step = 3; // 「瞬間移動」
+
+		public:
 			track_info(TrackInfo const& src, Object::TrackMode mode)
 				: denom{ src.denominator() }
 				, prec{ src.precision() }
 				, min{ src.val_int_min }
 				, max{ src.val_int_max }
-				, mode{ mode }
-				, spec{ easing_name_spec(mode).second } {}
-			bool has_easing() const { return (mode.num & 0x0f) != 0; }
+				, is_none{ (mode.num & 0x0f) == idx_easing_none }
+				, is_step{ (mode.num & 0x0f) == idx_easing_step }
+				, is_twopoints { easing_name_spec(mode).second.twopoints } {}
 			int to_internal(double val) const {
 				return val_disp_to_int(val, denom, prec, min, max);
 			}
@@ -1607,14 +1609,6 @@ private:
 				}
 				else ::AppendMenuW(menu, MF_STRING | (grayed ? MF_GRAYED : 0), id, fmt);
 			}
-			// grays out the last added menu item.
-			static void gray_out(HMENU menu)
-			{
-				int n = ::GetMenuItemCount(menu); // assumes it's positive.
-				MENUITEMINFOW mii{ .cbSize = sizeof(mii), .fMask = MIIM_STATE, .fState = MFS_GRAYED };
-				::SetMenuItemInfoW(menu, n - 1, TRUE, &mii);
-
-			}
 			static void push_undo(Object const& obj)
 			{
 				exedit.nextundo();
@@ -1623,13 +1617,26 @@ private:
 
 			// quickly determines whether there is a left object in the midpoint-chain.
 			static bool has_adjacent_left(ExEdit::Object const& obj) {
-				int j = obj.index_midpt_leader, i = &obj - *exedit.ObjectArray_ptr;
-				return j >= 0 && i != j;
+				int j = obj.index_midpt_leader;
+				return j >= 0 && &obj != &(*exedit.ObjectArray_ptr)[j];
+			}
+			bool has_valid_left(ExEdit::Object const& obj) const {
+				return !info.is_ease_twopoints() && has_adjacent_left(obj);
 			}
 			// quickly determines whether there is a right object in the midpoint-chain.
 			static bool has_adjacent_right(ExEdit::Object const& obj) {
 				return obj.index_midpt_leader >= 0 &&
 					exedit.NextObjectIdxArray[&obj - *exedit.ObjectArray_ptr] >= 0;
+			}
+			bool has_valid_right(ExEdit::Object const& obj) const {
+				return !info.is_ease_twopoints() && has_adjacent_right(obj);
+			}
+			// quickly determines whether there is a left or right object in the midpoint-chain.
+			static bool has_adjacent_sections(ExEdit::Object const& obj) {
+				return obj.index_midpt_leader >= 0;
+			}
+			bool has_valid_sections(ExEdit::Object const& obj) const {
+				return !info.is_ease_twopoints() && has_adjacent_sections(obj);
 			}
 		};
 
@@ -1655,7 +1662,7 @@ private:
 				auto [pos, chain] = collect_pos_chain(obj);
 				auto values = collect_int_values(chain, idx_track);
 				self.modify_values(pos, values);
-				apply_int_values(pos, chain, values, idx_track);
+				apply_int_values(chain, values, idx_track);
 			}
 		};
 		struct paste_base : modify_base {
@@ -1767,8 +1774,7 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
-				if (!info.spec.twopoints && has_adjacent_left(obj) &&
-					list.has_section_full() && list.section > 0) {
+				if (has_valid_left(obj) && list.has_section_full() && list.section > 0) {
 					// (...%s→%s→[ %s ])
 					if (list.has_section_full()) list = list.trim_from_sect_r(-1);
 					append_menu(menu, id, false, L"%s (%s)", menu_title,
@@ -1792,8 +1798,7 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
-				if (!info.spec.twopoints && has_adjacent_right(obj) &&
-					list.has_section_full() && list.section + 2 < list.size()) {
+				if (has_valid_right(obj) && list.has_section_full() && list.section + 2 < list.size()) {
 					// ([ %s ]→%s→%s...)
 					if (list.has_section_full()) list = list.trim_from_sect_l(-1);
 					append_menu(menu, id, false, L"%s (%s)", menu_title,
@@ -1818,7 +1823,7 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
-				if (info.spec.twopoints || obj.index_midpt_leader < 0) return false;
+				if (has_valid_sections(obj)) return false;
 				if (list.has_section_full()) {
 					// (...%s→[ %s→%s ]→%s...)
 					append_menu(menu, id, false, L"%s (%s)", menu_title,
@@ -1845,11 +1850,11 @@ private:
 				if (!info.has_easing()) return false;
 
 				// (%s→%s→%s...)
-				if (info.spec.twopoints)
+				if (info.is_ease_twopoints())
 					list = list.trim_from_end(0, list.size() - 2);
 				list.discard_section();
 				append_menu(menu, id, false, L"%s (%s)", list.size() == 1 ? L"先頭だけ" : L"先頭から順に",
-					list.trim_from_end(0, list.size() - 3).to_string(info.prec, false, !info.spec.twopoints).c_str());
+					list.trim_from_end(0, list.size() - 3).to_string(info.prec, false, !info.is_ease_twopoints()).c_str());
 
 				return true;
 			}
@@ -1867,11 +1872,11 @@ private:
 				if (!info.has_easing()) return false;
 
 				// (...%s→%s→%s)
-				if (info.spec.twopoints)
+				if (info.is_ease_twopoints())
 					list = list.trim_from_end(list.size() - 2, 0);
 				list.discard_section();
 				append_menu(menu, id, false, L"%s (%s)", list.size() == 1 ? L"末尾だけ" : L"末尾から順に",
-					list.trim_from_end(list.size() - 3, 0).to_string(info.prec, !info.spec.twopoints, false).c_str());
+					list.trim_from_end(list.size() - 3, 0).to_string(info.prec, !info.is_ease_twopoints(), false).c_str());
 				return true;
 			}
 
@@ -1907,7 +1912,7 @@ private:
 			{
 				if (!info.has_easing()) return false;
 				if (list.size() != 1) return false;
-				if (!info.spec.twopoints && has_adjacent_left(obj)) {
+				if (has_valid_left(obj)) {
 					list.discard_section();
 					append_menu(menu, id, false, L"%s (%s)", menu_title,
 						list.to_string(info.prec, false, false).c_str());
@@ -1930,7 +1935,7 @@ private:
 			{
 				if (!info.has_easing()) return false;
 				if (list.size() != 1) return false;
-				if (!info.spec.twopoints && has_adjacent_right(obj)) {
+				if (has_valid_right(obj)) {
 					list.discard_section();
 					append_menu(menu, id, false, L"%s (%s)", menu_title,
 						list.to_string(info.prec, false, false).c_str());
@@ -2012,7 +2017,7 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_l)
 			{
 				if (!info.has_easing()) return false;
-				if (!info.spec.twopoints && has_adjacent_left(obj)) {
+				if (has_valid_left(obj)) {
 					value = info_l.value();
 					append_menu(menu, id, false, L"%s (%.*f)", menu_title,
 						static_cast<int>(0.5 + std::log10(info.prec)), value);
@@ -2036,7 +2041,7 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, TrackInfo const& info_r)
 			{
 				if (!info.has_easing()) return false;
-				if (!info.spec.twopoints && has_adjacent_right(obj)) {
+				if (has_valid_right(obj)) {
 					value = info_r.value();
 					append_menu(menu, id, false, L"%s (%.*f)", menu_title,
 						static_cast<int>(0.5 + std::log10(info.prec)), value);
@@ -2060,7 +2065,7 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj, bool right)
 			{
 				if (!info.has_easing()) return false;
-				if (info.spec.twopoints || obj.index_midpt_leader < 0) return false;
+				if (!has_valid_sections(obj)) return false;
 
 				to_right = right;
 				append_menu(menu, id, false, to_right ? L"右へ区間1つ分" : L"左へ区間1つ分");
@@ -2077,13 +2082,11 @@ private:
 		struct flip_base : modify_base {
 			constexpr static auto root_title = L"数値を前後反転";
 		protected:
-			constexpr static int idx_easing_step = 3; // 「瞬間移動」
-			bool is_easing_step() const { return (info.mode.num & 0x0f) == idx_easing_step; }
 			bool append_core(HMENU menu, uint32_t id, wchar_t const* title,
 				ExEdit::Object const& obj, bool require_left, bool require_right) const
 			{
 				if (!info.has_easing()) return false;
-				if (info.spec.twopoints || obj.index_midpt_leader < 0) return false;
+				if (!has_valid_sections(obj)) return false;
 
 				append_menu(menu, id,
 					(require_left && !has_adjacent_left(obj)) ||
@@ -2093,7 +2096,7 @@ private:
 
 			void flip_values(std::vector<int>& values, int flip_center_x2) const
 			{
-				if (is_easing_step()) flip_center_x2--; // handle stepping easing specially.
+				if (info.is_ease_step()) flip_center_x2--; // handle stepping easing specially.
 
 				// reverse the values. values at off-range are filled from the nearest.
 				for (size_t p = flip_center_x2 + 1; p < values.size(); p++)
@@ -2135,7 +2138,6 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj) const
 			{
 				if (!append_core(menu, id, L"区間の右を中心", obj, false, true)) return false;
-				if (!has_adjacent_right(obj)) gray_out(menu);
 				return true;
 			}
 
@@ -2273,7 +2275,7 @@ public:
 			}
 		}
 		else add_gray(menu, mc::paste_base::root_title);
-		
+
 		// commands for internal copying.
 		mc::write_l2r			write_l2r		{ info };
 		mc::write_r2l			write_r2l		{ info };
@@ -2292,16 +2294,16 @@ public:
 		}
 
 		// commands for translation.
-		mc::translate		trans_left		{ info };
-		mc::translate		trans_right		{ info };
+		mc::translate		trans_left	{ info };
+		mc::translate		trans_right	{ info };
 
 		// commands for flippings.
-		mc::flip_entire		flip_entire		{ info };
-		mc::flip_left		flip_left		{ info };
-		mc::flip_middle		flip_middle		{ info };
-		mc::flip_right		flip_right		{ info };
+		mc::flip_entire		flip_entire	{ info };
+		mc::flip_left		flip_left	{ info };
+		mc::flip_middle		flip_middle	{ info };
+		mc::flip_right		flip_right	{ info };
 
-		if (info.has_easing() && !info.spec.twopoints && obj.index_midpt_leader >= 0) {
+		if (info.has_easing() && !info.is_ease_twopoints() && obj.index_midpt_leader >= 0) {
 			add_sep(menu);
 
 			// translations as a submenu.
@@ -2324,9 +2326,10 @@ public:
 
 		// show a context menu
 		TPMPARAMS tp{ .cbSize = sizeof(tp) }; ::GetWindowRect(hwnd, &tp.rcExclude);
+		POINT pt; ::GetCursorPos(&pt);
 		uint32_t id = ::TrackPopupMenuEx(menu,
-			TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
-			tp.rcExclude.left, tp.rcExclude.bottom, hwnd, &tp);
+			TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_VERTICAL,
+			pt.x, pt.y, hwnd, &tp);
 		::DestroyMenu(menu);
 		if (id == menu_id::dismissed) return false;
 
@@ -2489,17 +2492,18 @@ inline constinit struct Settings {
 	} filterName{ nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 
 	struct {
-		bool linked_track_invert_shift, wheel_click, tooltip_mode, tooltip_values_zigzag, tip_anim;
+		bool linked_track_invert_shift, wheel_click, context_menu,
+			tooltip_mode, tooltip_values_zigzag, tip_anim;
 		int16_t tooltip_values_left, tooltip_values_right;
 		uint16_t tip_delay, tip_duration;
 		int32_t tip_text_color; // 0xrrggbb or < 0 (not spcified).
 
 		constexpr static uint16_t min_time = 0, max_time = 60'000;
-		bool is_enabled() const { return wheel_click || is_tooltip_enabled(); };
+		bool is_enabled() const { return wheel_click || context_menu || is_tooltip_enabled(); };
 		bool is_tooltip_enabled() const {
 			return tooltip_mode || tooltip_values_left != 0 || tooltip_values_right != 0;
 		}
-	} easings{ false, true, true, true, true, 5, 5, 0, 10'000, -1 };
+	} easings{ false, true, true, true, true, true, 5, 5, 0, 10'000, -1 };
 
 	constexpr bool hooks_dialog() const
 	{
@@ -2592,6 +2596,7 @@ inline constinit struct Settings {
 
 		load_bool(easings.,	linked_track_invert_shift,	"Easings");
 		load_bool(easings.,	wheel_click,			"Easings");
+		load_bool(easings.,	context_menu,			"Easings");
 		load_bool(easings.,	tooltip_mode,			"Easings");
 		load_int (easings.,	tooltip_values_left,	"Easings");
 		load_int (easings.,	tooltip_values_right,	"Easings");
@@ -3307,42 +3312,44 @@ LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM wparam, LPARA
 		}
 		break;
 
-		/*
 	case WM_RBUTTONDOWN:
 	{
-		if (/* TODO: settings.easings.context_menu* /true && *exedit.SettingDialogObjectIndex >= 0) {
-			Easings::on_context_menu(hwnd, idx);
+		if (settings.easings.context_menu && *exedit.SettingDialogObjectIndex >= 0) {
+			if (Easings::on_context_menu(hwnd, idx)) {
+				// update the setting dialog and the main window.
+				update_setting_dialog();
+				update_current_frame(idx);
+			}
 			return 0; // mark handled.
 		}
 		break;
 	}
-		*/
-	case WM_RBUTTONDOWN:
-	{
-		if (/* TODO: settings.easings.context_menu*/true && *exedit.SettingDialogObjectIndex >= 0) {
-			::SetCapture(hwnd);
-			return 0;
-		}
-		break;
-	}
-	case WM_RBUTTONUP:
-		if (/* TODO: settings.easings.context_menu*/true && *exedit.SettingDialogObjectIndex >= 0
-			&& ::GetCapture() == hwnd) {
-			::ReleaseCapture();
+	//case WM_RBUTTONDOWN:
+	//{
+	//	if (settings.easings.context_menu && *exedit.SettingDialogObjectIndex >= 0) {
+	//		::SetCapture(hwnd);
+	//		return 0;
+	//	}
+	//	break;
+	//}
+	//case WM_RBUTTONUP:
+	//	if (settings.easings.context_menu && *exedit.SettingDialogObjectIndex >= 0
+	//		&& ::GetCapture() == hwnd) {
+	//		::ReleaseCapture();
 
-			// see if the pointer is on the button.
-			int x = static_cast<int16_t>(lparam & 0xffff), y = static_cast<int16_t>(lparam >> 16);
-			RECT rc; ::GetClientRect(hwnd, &rc);
-			if (0 <= x && x < rc.right && 0 <= y && y < rc.bottom) {
-				if (Easings::on_context_menu(hwnd, idx)) {
-					// update the setting dialog and the main window.
-					update_setting_dialog();
-					update_current_frame(idx);
-				}
-				return 0; // mark handled.
-			}
-		}
-		break;
+	//		// see if the pointer is on the button.
+	//		int x = static_cast<int16_t>(lparam & 0xffff), y = static_cast<int16_t>(lparam >> 16);
+	//		RECT rc; ::GetClientRect(hwnd, &rc);
+	//		if (0 <= x && x < rc.right && 0 <= y && y < rc.bottom) {
+	//			if (Easings::on_context_menu(hwnd, idx)) {
+	//				// update the setting dialog and the main window.
+	//				update_setting_dialog();
+	//				update_current_frame(idx);
+	//			}
+	//			return 0; // mark handled.
+	//		}
+	//	}
+	//	break;
 
 	case WM_DESTROY:
 		::RemoveWindowSubclass(hwnd, param_button_hook, id);
