@@ -1435,7 +1435,7 @@ public:
 					if ((mode.num & 0x0f) == 0) break; // 移動無し
 					if (show_mode ||
 						((num_vals_L != 0 || num_vals_R != 0) &&
-							easing_name_spec(mode).second.twopoints))
+							!easing_name_spec(mode).second.twopoints))
 						reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = const_cast<char*>(" ");
 					break;
 				}
@@ -1491,7 +1491,8 @@ public:
 								&rc2, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
 						content.w = std::max(rc1.right - rc1.left, rc2.right - rc2.left);
 						content.h2 = rc1.bottom - rc1.top;
-						if (!content.values.empty()) content.h2 += gap_h;
+						if (!content.easing.empty() && !content.values.empty())
+							content.h2 += gap_h;
 						content.h = content.h2 + (rc2.bottom - rc2.top);
 					}
 					else if (dhdr->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYPOSTPAINT;
@@ -1690,17 +1691,14 @@ private:
 		};
 
 		struct paste_two : paste_base {
-			constexpr static auto menu_title = L"区間の左右";
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
-				if (list.size() <= 2 || list.has_section_full()) {
-					list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
-					list.discard_section();
-					append_menu(menu, id, false, L"%s (%s)", menu_title,
-						list.to_string(info.prec, false, false).c_str());
-				}
-				else append_menu(menu, id, true, menu_title);
+				if (!(list.size() <= 2 || list.has_section_full())) return false;
+				list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
+				list.discard_section();
+				append_menu(menu, id, false, L"区間の左右 (%s)",
+					list.to_string(info.prec, false, false).c_str());
 
 				return true;
 			}
@@ -1718,18 +1716,15 @@ private:
 		};
 
 		struct paste_left : paste_base {
-			constexpr static auto menu_title = L"区間の左だけ";
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
-				if (list.size() <= 2 || list.has_section_full()) {
-					list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
-					list = list.trim_from_end(0, list.size() - 1);
-					list.discard_section();
-					append_menu(menu, id, false, L"%s (%s)", menu_title,
-						list.to_string(info.prec, false, false).c_str());
-				}
-				else append_menu(menu, id, true, menu_title);
+				if (!(list.size() <= 2 || list.has_section_full())) return false;
+				list = list.has_section_full() ? list.trim_from_sect_l(0) : list;
+				list = list.trim_from_end(0, list.size() - 1);
+				list.discard_section();
+				append_menu(menu, id, false, L"区間の左だけ (%s)",
+					list.to_string(info.prec, false, false).c_str());
 
 				return true;
 			}
@@ -1744,18 +1739,15 @@ private:
 		};
 
 		struct paste_right : paste_base {
-			constexpr static auto menu_title = L"区間の右だけ";
 			bool append(HMENU menu, uint32_t id)
 			{
 				if (!info.has_easing()) return false;
-				if (list.size() <= 2 || list.has_section_full()) {
-					list = list.has_section_full() ? list.trim_from_sect_r(0) : list;
-					list = list.trim_from_end(list.size() - 1, 0);
-					list.discard_section();
-					append_menu(menu, id, false, L"%s (%s)", menu_title,
-						list.to_string(info.prec, false, false).c_str());
-				}
-				else append_menu(menu, id, true, menu_title);
+				if (!(list.size() <= 2 || list.has_section_full())) return false;
+				list = list.has_section_full() ? list.trim_from_sect_r(0) : list;
+				list = list.trim_from_end(list.size() - 1, 0);
+				list.discard_section();
+				append_menu(menu, id, false, L"区間の右だけ (%s)",
+					list.to_string(info.prec, false, false).c_str());
 
 				return true;
 			}
@@ -1774,7 +1766,8 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
-				if (has_valid_left(obj) && list.has_section_full() && list.section > 0) {
+				if (!list.has_section_full()) return false;
+				if (has_valid_left(obj) && list.section > 0) {
 					// (...%s→%s→[ %s ])
 					if (list.has_section_full()) list = list.trim_from_sect_r(-1);
 					append_menu(menu, id, false, L"%s (%s)", menu_title,
@@ -1798,7 +1791,8 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
-				if (has_valid_right(obj) && list.has_section_full() && list.section + 2 < list.size()) {
+				if (!list.has_section_full()) return false;
+				if (has_valid_right(obj) && list.section + 2 < list.size()) {
 					// ([ %s ]→%s→%s...)
 					if (list.has_section_full()) list = list.trim_from_sect_l(-1);
 					append_menu(menu, id, false, L"%s (%s)", menu_title,
@@ -1823,8 +1817,8 @@ private:
 			bool append(HMENU menu, uint32_t id, ExEdit::Object const& obj)
 			{
 				if (!info.has_easing()) return false;
-				if (has_valid_sections(obj)) return false;
-				if (list.has_section_full()) {
+				if (!list.has_section_full()) return false;
+				if (has_valid_sections(obj)) {
 					// (...%s→[ %s→%s ]→%s...)
 					append_menu(menu, id, false, L"%s (%s)", menu_title,
 						list.trim_from_sect(1, 1).to_string(info.prec, true, true).c_str());
@@ -1960,7 +1954,7 @@ private:
 				if (!info.has_easing()) return false;
 
 				value = info_l.value();
-				append_menu(menu, id, false, L"上書き: 左\u25b7右 (%.*f)", // White Right-Pointing Triangle
+				append_menu(menu, id, false, L"上書き: 左 \u25c0 右 (%.*f)", // Black Right-Pointing Triangle
 					static_cast<int>(0.5 + std::log10(info.prec)), value);
 				return true;
 			}
@@ -1979,7 +1973,7 @@ private:
 				if (!info.has_easing()) return false;
 
 				value = info_r.value();
-				append_menu(menu, id, false, L"上書き: 左\u25c1右 (%.*f)", // White Left-Pointing Triangle
+				append_menu(menu, id, false, L"上書き: 左 \u25b6 右 (%.*f)", // Black Left-Pointing Triangle
 					static_cast<int>(0.5 + std::log10(info.prec)), value);
 				return true;
 			}
@@ -1999,7 +1993,7 @@ private:
 
 				value_l = info_l.value(); value_r = info_r.value();
 				int prec_len = static_cast<int>(0.5 + std::log10(info.prec));
-				append_menu(menu, id, false, L"入替え: 左\u2194右 (%.*f\u2194%.*f)", // Left Right Arrow
+				append_menu(menu, id, false, L"入替え: 左 \u21c4 右 (%.*f \u21c4 %.*f)", // Rightwards Arrow Over Leftwards Arrow
 					prec_len, value_l, prec_len, value_r);
 				return true;
 			}
@@ -2242,34 +2236,48 @@ public:
 
 		if (values.size() > 0) {
 			if (!paste_unique	.append(menu, menu_id::paste_unique)) {
+				bool two_len = info.is_ease_twopoints() || obj.index_midpt_leader < 0;
 				HMENU sub = ::CreatePopupMenu();
 				if (values.size() == 1) {
-					paste_uniform	.append(sub, menu_id::paste_uniform);
+					if (two_len) {
+						paste_left		.append(sub, menu_id::paste_left);
+						paste_two		.append(sub, menu_id::paste_two);
+						paste_right		.append(sub, menu_id::paste_right);
+					}
+					else {
+						paste_uniform	.append(sub, menu_id::paste_uniform);
 
-					add_sep(sub);
+						add_sep(sub);
 
-					paste_all_headed.append(sub, menu_id::paste_all_headed);
-					paste_uniform_l	.append(sub, menu_id::paste_uniform_l, obj);
-					paste_left		.append(sub, menu_id::paste_left);
-					paste_two		.append(sub, menu_id::paste_two);
-					paste_right		.append(sub, menu_id::paste_right);
-					paste_uniform_r	.append(sub, menu_id::paste_uniform_r, obj);
-					paste_all_tailed.append(sub, menu_id::paste_all_tailed);
+						paste_all_headed.append(sub, menu_id::paste_all_headed);
+						paste_uniform_l	.append(sub, menu_id::paste_uniform_l, obj);
+						paste_left		.append(sub, menu_id::paste_left);
+						paste_two		.append(sub, menu_id::paste_two);
+						paste_right		.append(sub, menu_id::paste_right);
+						paste_uniform_r	.append(sub, menu_id::paste_uniform_r, obj);
+						paste_all_tailed.append(sub, menu_id::paste_all_tailed);
+					}
+				}
+				else if (values.size() == 2 && two_len) {
+					paste_left	.append(sub, menu_id::paste_left);
+					paste_two	.append(sub, menu_id::paste_two);
+					paste_right	.append(sub, menu_id::paste_right);
 				}
 				else {
 					paste_all_headed.append(sub, menu_id::paste_all_headed);
-					paste_all		.append(sub, menu_id::paste_all, obj);
+					if (!two_len) paste_all.append(sub, menu_id::paste_all, obj);
 					paste_all_tailed.append(sub, menu_id::paste_all_tailed);
 
-					add_sep(sub);
+					if (values.has_section()) {
+						add_sep(sub);
 
-					paste_left_all	.append(sub, menu_id::paste_left_all, obj);
-					paste_left		.append(sub, menu_id::paste_left);
-					paste_two		.append(sub, menu_id::paste_two);
-					paste_right		.append(sub, menu_id::paste_right);
-					paste_right_all	.append(sub, menu_id::paste_right_all, obj);
+						if (!two_len) paste_left_all.append(sub, menu_id::paste_left_all, obj);
+						paste_left	.append(sub, menu_id::paste_left);
+						paste_two	.append(sub, menu_id::paste_two);
+						paste_right	.append(sub, menu_id::paste_right);
+						if (!two_len) paste_right_all.append(sub, menu_id::paste_right_all, obj);
+					}
 				}
-
 
 				add_sub(menu, sub, mc::paste_base::root_title);
 			}
@@ -2503,7 +2511,7 @@ inline constinit struct Settings {
 		bool is_tooltip_enabled() const {
 			return tooltip_mode || tooltip_values_left != 0 || tooltip_values_right != 0;
 		}
-	} easings{ false, true, true, true, true, true, 5, 5, 0, 10'000, -1 };
+	} easings{ false, true, true, true, false, true, 5, 5, 0, 10'000, -1 };
 
 	constexpr bool hooks_dialog() const
 	{
@@ -3566,7 +3574,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.90-beta1"
+#define PLUGIN_VERSION	"v1.90-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)

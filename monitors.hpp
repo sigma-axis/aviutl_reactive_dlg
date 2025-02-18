@@ -48,6 +48,9 @@ namespace sigma_lib::W32
 			is_primary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
 		}
 
+		constexpr int width() const { return bound.right - bound.left; }
+		constexpr int height() const { return bound.bottom - bound.top; }
+
 		constexpr auto clamp(int left, int top, int right, int bottom) const {
 			return clamp_core(left, top, right, bottom, bound);
 		}
