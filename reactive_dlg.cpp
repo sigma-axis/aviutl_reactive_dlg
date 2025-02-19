@@ -1954,7 +1954,7 @@ private:
 				if (!info.has_easing()) return false;
 
 				value = info_l.value();
-				append_menu(menu, id, false, L"上書き: 左 \u25c0 右 (%.*f)", // Black Right-Pointing Triangle
+				append_menu(menu, id, false, L"上書き: 左 \u25b6 右 (%.*f)", // Black Right-Pointing Triangle
 					static_cast<int>(0.5 + std::log10(info.prec)), value);
 				return true;
 			}
@@ -1973,7 +1973,7 @@ private:
 				if (!info.has_easing()) return false;
 
 				value = info_r.value();
-				append_menu(menu, id, false, L"上書き: 左 \u25b6 右 (%.*f)", // Black Left-Pointing Triangle
+				append_menu(menu, id, false, L"上書き: 左 \u25c0 右 (%.*f)", // Black Left-Pointing Triangle
 					static_cast<int>(0.5 + std::log10(info.prec)), value);
 				return true;
 			}
