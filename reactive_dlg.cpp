@@ -1258,7 +1258,7 @@ private:
 			// parse each number and add it to the list.
 			auto pos = src.data(), e = pos;
 			for (double val; val = std::wcstod(pos, &e), e != pos; pos = e) {
-				if (val == HUGE_VAL) {
+				if (val == HUGE_VAL || (*e != L'\0' && *e != L' ')) {
 					// recognize as a failure.
 					values.clear();
 					return;
@@ -3574,7 +3574,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v1.90-beta2"
+#define PLUGIN_VERSION	"v1.90-beta3"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name##" "##ver##" by "##author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
