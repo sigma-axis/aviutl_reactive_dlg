@@ -190,19 +190,12 @@ static inline name_cache const* find_script_name_cache(ExEdit::Object const& obj
 }
 
 // holding the current states of manipulation of the check buttons and the separators.
-struct hook_state {
-	enum State : uint32_t {
-		idle,
-		renew,	// the filter itself is changing.
-		manip,	// manipulating intentionally with this dll.
-	} state = idle;
-
+static constinit struct {
+	bool renew = false;
 	name_cache const* candidate = nullptr;
-};
-static constinit std::unique_ptr<hook_state[]> hook_states{};
+} hook_state;
 
 // adjusts positions and sizes of the check button and the separator.
-// `hook_states[filter_index].state` must be set to `manip` before this call.
 static inline void adjust_layout(name_cache const& cache, size_t filter_index)
 {
 	HWND const dlg = *exedit.hwnd_setting_dlg,
@@ -264,21 +257,20 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 						}
 						// found the desired index.
 
-						// current state must be `idle`.
-						auto& state = hook_states[filter_idx];
-						if (state.state != hook_state::idle) break;
+						// current state must be "idle".
+						if (hook_state.renew) break;
 
 						// alternative name must be found.
 						auto* cache = find_script_name_cache(obj, filter_idx);
 						if (cache == nullptr) break;
 
 						// then update the filter name and adjust the layout.
-						state = { hook_state::manip, cache };
+						hook_state = { true, cache };
 						::SetWindowTextW(exedit.filter_checkboxes[filter_idx], cache->caption.c_str());
 						adjust_layout(*cache, filter_idx);
 
-						// set the state back to `idle`.
-						state.state = hook_state::idle;
+						// set the state back to "idle".
+						hook_state.renew = false;
 						break;
 					}
 				}
@@ -294,6 +286,25 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 	return ret;
 }
 
+// フィルタ効果のセパレータ．
+static inline LRESULT CALLBACK filter_sep_hook(HWND hwnd, UINT message, WPARAM w, LPARAM l, auto id, auto data)
+{
+	switch (message) {
+	case WM_SIZE:
+	case WM_DESTROY:
+	{
+		::RemoveWindowSubclass(hwnd, &filter_sep_hook, id);
+		if (message != WM_SIZE) break;
+
+		if (hook_state.renew && hook_state.candidate != nullptr)
+			adjust_layout(*hook_state.candidate, static_cast<size_t>(data));
+		hook_state.renew = false;
+		break;
+	}
+	}
+	return ::DefSubclassProc(hwnd, message, w, l);
+}
+
 // フィルタ効果右上の名前表示チェックボックス．
 static inline LRESULT CALLBACK filter_name_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto data)
 {
@@ -303,16 +314,16 @@ static inline LRESULT CALLBACK filter_name_hook(HWND hwnd, UINT message, WPARAM 
 		if (auto const idx_obj = *exedit.SettingDialogObjectIndex; idx_obj >= 0) {
 			size_t const filter_idx = static_cast<size_t>(data);
 
-			// current state must be `idle`.
-			auto& state = hook_states[filter_idx];
-			if (state.state != hook_state::idle) break;
+			// current state must be "idle".
+			if (hook_state.renew) break;
 
 			// alternative name must be found.
 			auto* cache = find_script_name_cache((*exedit.ObjectArray_ptr)[idx_obj], filter_idx);
 			if (cache == nullptr) break;
 
 			// prepare the hook for the next call of WM_SIZE to the separator.
-			state = { hook_state::renew, cache };
+			hook_state = { true, cache };
+			::SetWindowSubclass(exedit.filter_separators[filter_idx], &filter_sep_hook, id, data);
 
 			// replace the new window text.
 			lparam = reinterpret_cast<LPARAM>(cache->caption.c_str());
@@ -324,28 +335,6 @@ static inline LRESULT CALLBACK filter_name_hook(HWND hwnd, UINT message, WPARAM 
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
-}
-
-// セパレータ．
-static inline LRESULT CALLBACK filter_sep_hook(HWND hwnd, UINT message, WPARAM w, LPARAM l, auto id, auto data)
-{
-	switch (message) {
-	case WM_SIZE:
-	{
-		size_t const filter_idx = static_cast<size_t>(data);
-		auto& state = hook_states[filter_idx];
-		if (state.state == hook_state::renew && state.candidate != nullptr) {
-			state.state = hook_state::manip;
-			adjust_layout(*state.candidate, filter_idx);
-		}
-		state.state = hook_state::idle;
-		break;
-	}
-	case WM_DESTROY:
-		::RemoveWindowSubclass(hwnd, &filter_sep_hook, id);
-		break;
-	}
-	return ::DefSubclassProc(hwnd, message, w, l);
 }
 NS_END
 
@@ -372,13 +361,9 @@ bool expt::setup(HWND hwnd, bool initializing)
 			basic_cam_names.init(exedit.basic_camera_eff_names);
 			basic_scn_names.init(exedit.basic_scene_change_names);
 
-			hook_states = std::make_unique<hook_state[]>(ExEdit::Object::MAX_FILTER);
-
 			::SetWindowSubclass(dlg, &setting_dlg_hook, hook_uid(), {});
-			for (size_t i = 0; i < ExEdit::Object::MAX_FILTER; i++) {
+			for (size_t i = 0; i < ExEdit::Object::MAX_FILTER; i++)
 				::SetWindowSubclass(exedit.filter_checkboxes[i], &filter_name_hook,	hook_uid(), { i });
-				::SetWindowSubclass(exedit.filter_separators[i], &filter_sep_hook,	hook_uid(), { i });
-			}
 		}
 		else {
 			::RemoveWindowSubclass(dlg, &setting_dlg_hook, hook_uid());
