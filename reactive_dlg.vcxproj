@@ -64,6 +64,7 @@
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:shift_jis %(AdditionalOptions)</AdditionalOptions>
       <UseFullPaths>false</UseFullPaths>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -87,6 +88,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <OmitFramePointers>true</OmitFramePointers>
       <UseFullPaths>false</UseFullPaths>
+      <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -100,13 +102,38 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="clipboard.hpp" />
+    <ClInclude Include="Dropdown_Keyboard.hpp" />
+    <ClInclude Include="Easings.hpp" />
+    <ClInclude Include="Easings_ContextMenu.hpp" />
+    <ClInclude Include="Easings_Misc.hpp" />
+    <ClInclude Include="Easings_Tooltip.hpp" />
+    <ClInclude Include="FilterName.hpp" />
+    <ClInclude Include="inifile_op.hpp" />
     <ClInclude Include="memory_protect.hpp" />
     <ClInclude Include="modkeys.hpp" />
     <ClInclude Include="monitors.hpp" />
+    <ClInclude Include="reactive_dlg.hpp" />
     <ClInclude Include="slim_formatter.hpp" />
+    <ClInclude Include="str_encodes.hpp" />
+    <ClInclude Include="TextBox.hpp" />
+    <ClInclude Include="TrackLabel.hpp" />
+    <ClInclude Include="Track_Button.hpp" />
+    <ClInclude Include="Track_Keyboard.hpp" />
+    <ClInclude Include="Track_Mouse.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Dropdown_Keyboard.cpp" />
+    <ClCompile Include="Easings.cpp" />
+    <ClCompile Include="Easings_ContextMenu.cpp" />
+    <ClCompile Include="Easings_Misc.cpp" />
+    <ClCompile Include="Easings_Tooltip.cpp" />
+    <ClCompile Include="FilterName.cpp" />
     <ClCompile Include="reactive_dlg.cpp" />
+    <ClCompile Include="TextBox.cpp" />
+    <ClCompile Include="TrackLabel.cpp" />
+    <ClCompile Include="Track_Button.cpp" />
+    <ClCompile Include="Track_Keyboard.cpp" />
+    <ClCompile Include="Track_Mouse.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="reactive_dlg.def" />
