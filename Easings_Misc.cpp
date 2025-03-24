@@ -60,7 +60,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 	}
 
 	case WM_DESTROY:
-		::RemoveWindowSubclass(hwnd, param_button_hook, id);
+		::RemoveWindowSubclass(hwnd, &param_button_hook, id);
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
@@ -85,7 +85,7 @@ bool expt::setup(HWND hwnd, bool initializing)
 
 		if (settings.wheel_click) {
 			for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++)
-				::SetWindowSubclass(exedit.hwnd_track_buttons[i], param_button_hook, hook_uid(), { i });
+				::SetWindowSubclass(exedit.hwnd_track_buttons[i], &param_button_hook, hook_uid(), { i });
 		}
 		return true;
 	}

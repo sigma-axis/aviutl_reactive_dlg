@@ -53,7 +53,6 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 		if (*exedit.SettingDialogObjectIndex >= 0) {
 			// check if it's from an UpDown control.
 			auto* header = reinterpret_cast<NMHDR*>(lparam);
-		//#pragma warning(suppress: 26454) // overflow warning by the macro UDN_DELTAPOS.
 			if (header == nullptr || header->code != UDN_DELTAPOS ||
 				header->hwndFrom == nullptr ||
 				!check_window_class(header->hwndFrom, UPDOWN_CLASSW)) break;
@@ -74,7 +73,7 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 		break;
 
 	case WM_DESTROY:
-		::RemoveWindowSubclass(hwnd, setting_dlg_hook, id);
+		::RemoveWindowSubclass(hwnd, &setting_dlg_hook, id);
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);

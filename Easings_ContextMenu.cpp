@@ -36,7 +36,7 @@ using byte = uint8_t;
 NS_BEGIN()
 
 ////////////////////////////////
-// 変化方法のツールチップ表示．
+// トラックバーの右クリックメニュー．
 ////////////////////////////////
 using namespace reactive_dlg::Easings;
 using namespace reactive_dlg::Easings::ContextMenu;
@@ -872,7 +872,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 	}
 
 	case WM_DESTROY:
-		::RemoveWindowSubclass(hwnd, param_button_hook, id);
+		::RemoveWindowSubclass(hwnd, &param_button_hook, id);
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
@@ -889,7 +889,7 @@ bool expt::setup(HWND hwnd, bool initializing)
 {
 	if (settings.context_menu && initializing) {
 		for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++)
-			::SetWindowSubclass(exedit.hwnd_track_buttons[i], param_button_hook, hook_uid(), { i });
+			::SetWindowSubclass(exedit.hwnd_track_buttons[i], &param_button_hook, hook_uid(), { i });
 		return true;
 	}
 	return false;

@@ -20,7 +20,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 
 
 ////////////////////////////////
-// 変化方法のツールチップ表示．
+// トラックバーの右クリックメニュー．
 ////////////////////////////////
 namespace reactive_dlg::Easings::ContextMenu
 {

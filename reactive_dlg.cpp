@@ -83,30 +83,14 @@ bool warn_conflict(wchar_t const* module_name, wchar_t const* ini_piece, char co
 
 
 ////////////////////////////////
-// 設定ロードセーブ．
+// ファイルパス操作．
 ////////////////////////////////
-
-// replacing a file extension when it's known.
 template<class T, size_t len_max, size_t len_old, size_t len_new>
 static void replace_tail(T(&dst)[len_max], size_t len, T const(&tail_old)[len_old], T const(&tail_new)[len_new])
 {
+	// replaces a file extension when it's known.
 	if (len < len_old || len - len_old + len_new > len_max) return;
 	std::memcpy(dst + len - len_old, tail_new, len_new * sizeof(T));
-}
-inline void load_settings(HMODULE h_dll)
-{
-	char ini_file[MAX_PATH];
-	replace_tail(ini_file, ::GetModuleFileNameA(h_dll, ini_file, std::size(ini_file)) + 1, "auf", "ini");
-
-	TextBox::settings.load(ini_file);
-	Dropdown::Keyboard::settings.load(ini_file);
-	Track::Keyboard::settings.load(ini_file);
-	Track::Mouse::settings.load(ini_file);
-	Track::Button::settings.load(ini_file);
-	FilterName::settings.load(ini_file);
-	Easings::Misc::settings.load(ini_file);
-	Easings::Tooltip::settings.load(ini_file);
-	Easings::ContextMenu::settings.load(ini_file);
 }
 
 
@@ -191,11 +175,21 @@ BOOL func_init(AviUtl::FilterPlugin* fp)
 		fp->exfunc->add_menu_item(fp, name, fp->hwnd, static_cast<int32_t>(id), 0, AviUtl::ExFunc::AddMenuItemFlag::None);
 
 	// 設定ロード．
-	load_settings(fp->dll_hinst);
+	char ini_file[MAX_PATH];
+	replace_tail(ini_file, ::GetModuleFileNameA(fp->dll_hinst, ini_file, std::size(ini_file)) + 1, "auf", "ini");
+	TextBox::				settings.load(ini_file);
+	Dropdown::Keyboard::	settings.load(ini_file);
+	Track::Keyboard::		settings.load(ini_file);
+	Track::Mouse::			settings.load(ini_file);
+	Track::Button::			settings.load(ini_file);
+	FilterName::			settings.load(ini_file);
+	Easings::Misc::			settings.load(ini_file);
+	Easings::Tooltip::		settings.load(ini_file);
+	Easings::ContextMenu::	settings.load(ini_file);
 
 	// 競合確認．
-	Track::Button::settings.check_conflict(fp->name);
-	FilterName::settings.check_conflict(fp->name);
+	Track::Button::	settings.check_conflict(fp->name);
+	FilterName::	settings.check_conflict(fp->name);
 
 	return TRUE;
 }
@@ -204,29 +198,29 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, AviUtl:
 {
 	using Message = AviUtl::FilterPlugin::WindowMessage;
 	switch (message) {
-		// 拡張編集設定ダイアログ等のフック/アンフック．
+		// 仕込みの設定/解除．
 	case Message::ChangeWindow:
-		TextBox::setup(hwnd, true);
-		Dropdown::Keyboard::setup(hwnd, true);
-		Track::Keyboard::setup(hwnd, true);
-		Track::Mouse::setup(hwnd, true);
-		Track::Button::setup(hwnd, true);
-		FilterName::setup(hwnd, true);
-		Easings::Misc::setup(hwnd, true);
-		Easings::Tooltip::setup(hwnd, true);
-		Easings::ContextMenu::setup(hwnd, true);
+		TextBox::				setup(hwnd, true);
+		Dropdown::Keyboard::	setup(hwnd, true);
+		Track::Keyboard::		setup(hwnd, true);
+		Track::Mouse::			setup(hwnd, true);
+		Track::Button::			setup(hwnd, true);
+		FilterName::			setup(hwnd, true);
+		Easings::Misc::			setup(hwnd, true);
+		Easings::Tooltip::		setup(hwnd, true);
+		Easings::ContextMenu::	setup(hwnd, true);
 		break;
 	case Message::Exit:
 		// at this moment, the setting dialog is already destroyed.
-		TextBox::setup(hwnd, false);
-		Dropdown::Keyboard::setup(hwnd, false);
-		Track::Keyboard::setup(hwnd, false);
-		Track::Mouse::setup(hwnd, false);
-		Track::Button::setup(hwnd, false);
-		FilterName::setup(hwnd, false);
-		Easings::Misc::setup(hwnd, false);
-		Easings::Tooltip::setup(hwnd, false);
-		Easings::ContextMenu::setup(hwnd, false);
+		TextBox::				setup(hwnd, false);
+		Dropdown::Keyboard::	setup(hwnd, false);
+		Track::Keyboard::		setup(hwnd, false);
+		Track::Mouse::			setup(hwnd, false);
+		Track::Button::			setup(hwnd, false);
+		FilterName::			setup(hwnd, false);
+		Easings::Misc::			setup(hwnd, false);
+		Easings::Tooltip::		setup(hwnd, false);
+		Easings::ContextMenu::	setup(hwnd, false);
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);

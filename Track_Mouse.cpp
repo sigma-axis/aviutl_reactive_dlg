@@ -80,7 +80,7 @@ static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM 
 		if (hwnd == reinterpret_cast<HWND>(lparam)) break;
 		[[fallthrough]];
 	case WM_KILLFOCUS:
-		::RemoveWindowSubclass(hwnd, track_label_hook, id);
+		::RemoveWindowSubclass(hwnd, &track_label_hook, id);
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
@@ -96,7 +96,7 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 				if (settings.drag.is_enabled() && find_trackinfo(wparam & 0xffff, ctrl) != nullptr) {
 					// hook for tweaked drag behavior.
 					::GetCursorPos(&mouse_pos_on_focused);
-					::SetWindowSubclass(ctrl, track_label_hook, hook_uid(), {});
+					::SetWindowSubclass(ctrl, &track_label_hook, hook_uid(), {});
 				}
 				break;
 			}
@@ -171,7 +171,7 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 		break;
 
 	case WM_DESTROY:
-		::RemoveWindowSubclass(hwnd, setting_dlg_hook, id);
+		::RemoveWindowSubclass(hwnd, &setting_dlg_hook, id);
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
@@ -193,7 +193,7 @@ static inline LRESULT CALLBACK trackbar_hook(HWND hwnd, UINT message, WPARAM wpa
 	}
 
 	case WM_DESTROY:
-		::RemoveWindowSubclass(hwnd, trackbar_hook, id);
+		::RemoveWindowSubclass(hwnd, &trackbar_hook, id);
 		break;
 	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);

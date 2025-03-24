@@ -249,7 +249,7 @@ bool expt::setup(HWND hwnd, bool initializing)
 				ti.uId = reinterpret_cast<uintptr_t>(tgt);
 
 				::SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
-				::SetWindowSubclass(tgt, param_button_hook, hook_uid(), { i });
+				::SetWindowSubclass(tgt, &param_button_hook, hook_uid(), { i });
 			}
 
 			// settings of delay time for the tooltip.
