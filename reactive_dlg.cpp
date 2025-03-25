@@ -49,6 +49,28 @@ using namespace reactive_dlg;
 
 
 ////////////////////////////////
+// 主要情報源の変数アドレス．
+////////////////////////////////
+bool ExEdit092::init(AviUtl::FilterPlugin* this_fp)
+{
+	constexpr char const* info_exedit092 = "拡張編集(exedit) version 0.92 by ＫＥＮくん";
+
+	if (fp != nullptr) return true;
+	AviUtl::SysInfo si; this_fp->exfunc->get_sys_info(nullptr, &si);
+	for (int i = 0; i < si.filter_n; i++) {
+		auto that_fp = this_fp->exfunc->get_filterp(i);
+		if (that_fp->information != nullptr &&
+			0 == std::strcmp(that_fp->information, info_exedit092)) {
+			fp = that_fp;
+			init_pointers(fp->dll_hinst, fp->hinst_parent);
+			return true;
+		}
+	}
+	return false;
+}
+
+
+////////////////////////////////
 // 各機能に共有の関数実装．
 ////////////////////////////////
 

@@ -71,22 +71,7 @@ static_assert(sizeof(TrackInfo) == 40);
 
 inline constinit struct ExEdit092 {
 	AviUtl::FilterPlugin* fp;
-	constexpr static char const* info_exedit092 = "拡張編集(exedit) version 0.92 by ＫＥＮくん";
-	bool init(AviUtl::FilterPlugin* this_fp)
-	{
-		if (fp != nullptr) return true;
-		AviUtl::SysInfo si; this_fp->exfunc->get_sys_info(nullptr, &si);
-		for (int i = 0; i < si.filter_n; i++) {
-			auto that_fp = this_fp->exfunc->get_filterp(i);
-			if (that_fp->information != nullptr &&
-				0 == std::strcmp(that_fp->information, info_exedit092)) {
-				fp = that_fp;
-				init_pointers();
-				return true;
-			}
-		}
-		return false;
-	}
+	bool init(AviUtl::FilterPlugin* this_fp);
 
 	ExEdit::Object**	ObjectArray_ptr;	// 0x1e0fa4
 	int32_t*	NextObjectIdxArray;			// 0x1592d8
@@ -132,9 +117,9 @@ inline constinit struct ExEdit092 {
 	void(*update_setting_dlg)(int32_t idx_object); // 0x0305e0
 
 private:
-	void init_pointers()
+	void init_pointers(HINSTANCE dll_hinst, HINSTANCE hinst_parent)
 	{
-		auto pick_addr = [exedit_base=reinterpret_cast<uintptr_t>(fp->dll_hinst)]
+		auto pick_addr = [exedit_base=reinterpret_cast<uintptr_t>(dll_hinst)]
 			<class T>(T& target, ptrdiff_t offset) { target = std::bit_cast<T>(exedit_base + offset); };
 		pick_addr(ObjectArray_ptr,			0x1e0fa4);
 		pick_addr(NextObjectIdxArray,		0x1592d8);
