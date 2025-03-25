@@ -189,32 +189,76 @@ static inline name_cache const* find_script_name_cache(ExEdit::Object const& obj
 		&cache_source->find_cache(name, filter_index);
 }
 
+static inline size_t filter_index_from_script_combo(size_t id_combo,
+	decltype(ExEdit::Object::filter_param) const& filter_param)
+{
+	// find the index of checks.
+	constexpr size_t id_combo_base = 8100;
+	size_t const idx_combo = id_combo - id_combo_base;
+	if (idx_combo >= ExEdit::Object::MAX_CHECK) return ~0uz;
+
+	// traverse the filter to find the filter index.
+	for (size_t filter_index = 0; filter_index < std::size(filter_param); filter_index++) {
+		auto const& filter = filter_param[filter_index];
+		int const j = idx_combo - filter.check_begin;
+		if (!filter.is_valid() || j < 0) break;
+		switch (filter.id) {
+		case filter_id::scn_chg:
+			if (j == 2) break; else continue;
+		case filter_id::anim_eff:
+		case filter_id::cust_obj:
+		case filter_id::cam_eff:
+			if (j == 0 || j == 1) break; else continue;
+		default: continue;
+		}
+
+		// found the desired index.
+		return filter_index;
+	}
+
+	// no such found.
+	return ~0uz;
+}
+
 // holding the current states of manipulation of the check buttons and the separators.
 static constinit struct {
-	bool renew = false;
+	size_t filter_index = 0;
 	name_cache const* candidate = nullptr;
+
+	constexpr void push(size_t filter_index, name_cache const* candidate) {
+		this->filter_index = filter_index;
+		this->candidate = candidate;
+	}
+	constexpr bool is_valid() const { return candidate != nullptr; }
+	constexpr void invalidate() { candidate = nullptr; }
+
+	// adjusts positions and sizes of the check button and the separator.
+	void adjust_layout()
+	{
+		// the state must be valid.
+		if (!is_valid()) return;
+
+		HWND const dlg = *exedit.hwnd_setting_dlg,
+			sep = exedit.filter_separators[filter_index],
+			btn = exedit.filter_checkboxes[filter_index];
+
+		// find the positions of the check button and the separator.
+		RECT rc; ::GetWindowRect(sep, &rc);
+		POINT sep_tl{ rc.left, rc.top }; ::ScreenToClient(dlg, &sep_tl);
+		::GetWindowRect(btn, &rc);
+		POINT btn_br{ rc.right, rc.bottom }; ::ScreenToClient(dlg, &btn_br);
+
+		// adjust their sizes according to the precalculated width.
+		::MoveWindow(btn, btn_br.x - candidate->wd_button(), btn_br.y - candidate->button_height,
+			candidate->wd_button(), candidate->button_height, TRUE);
+		::MoveWindow(sep, sep_tl.x, sep_tl.y,
+			std::max<int>(btn_br.x - candidate->wd_button() - candidate->gap_between_sep - sep_tl.x, 0),
+			candidate->sep_height, TRUE);
+
+		// invalidate the state.
+		invalidate();
+	}
 } hook_state;
-
-// adjusts positions and sizes of the check button and the separator.
-static inline void adjust_layout(name_cache const& cache, size_t filter_index)
-{
-	HWND const dlg = *exedit.hwnd_setting_dlg,
-		sep = exedit.filter_separators[filter_index],
-		btn = exedit.filter_checkboxes[filter_index];
-
-	// find the positions of the check button and the separator.
-	RECT rc; ::GetWindowRect(sep, &rc);
-	POINT sep_tl{ rc.left, rc.top }; ::ScreenToClient(dlg, &sep_tl);
-	::GetWindowRect(btn, &rc);
-	POINT btn_br{ rc.right, rc.bottom }; ::ScreenToClient(dlg, &btn_br);
-
-	// adjust their sizes according to the precalculated width.
-	::MoveWindow(btn, btn_br.x - cache.wd_button(), btn_br.y - cache.button_height,
-		cache.wd_button(), cache.button_height, TRUE);
-	::MoveWindow(sep, sep_tl.x, sep_tl.y,
-		std::max<int>(btn_br.x - cache.wd_button() - cache.gap_between_sep - sep_tl.x, 0),
-		cache.sep_height, TRUE);
-}
 
 
 ////////////////////////////////
@@ -230,51 +274,26 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 			switch (wparam >> 16) {
 				// 選択スクリプトの変更を監視．
 			case CBN_SELCHANGE:
-				if (auto const idx_obj = *exedit.SettingDialogObjectIndex;
-					idx_obj >= 0 && check_window_class(ctrl, WC_COMBOBOXW)) {
-					auto const& obj = (*exedit.ObjectArray_ptr)[idx_obj];
-					auto const& filter_param = obj.filter_param;
+			{
+				if (hook_state.is_valid()) break;
+				auto const idx_obj = *exedit.SettingDialogObjectIndex;
+				if (idx_obj < 0 || !check_window_class(ctrl, WC_COMBOBOXW)) break;
+				auto const& obj = (*exedit.ObjectArray_ptr)[idx_obj];
 
-					// find the index of checks.
-					constexpr int id_combo_base = 8100;
-					int const id_combo = wparam & 0xffff;
-					int const idx_combo = id_combo - id_combo_base;
-					if (idx_combo < 0 || idx_combo >= ExEdit::Object::MAX_CHECK) break;
+				// find the filter index.
+				auto filter_index = filter_index_from_script_combo(wparam & 0xffff, obj.filter_param);
+				if (filter_index >= ExEdit::Object::MAX_FILTER) break;
 
-					// traverse the filter to find the filter index.
-					for (size_t filter_idx = 0; filter_idx < ExEdit::Object::MAX_FILTER; filter_idx++) {
-						auto const& filter = filter_param[filter_idx];
-						int const j = idx_combo - filter.check_begin;
-						if (!filter.is_valid() || j < 0) break;
-						switch (filter.id) {
-						case filter_id::scn_chg:
-							if (j == 2) break; else continue;
-						case filter_id::anim_eff:
-						case filter_id::cust_obj:
-						case filter_id::cam_eff:
-							if (j == 0 || j == 1) break; else continue;
-						default: continue;
-						}
-						// found the desired index.
+				// alternative name must be found.
+				auto* cache = find_script_name_cache(obj, filter_index);
+				if (cache == nullptr) break;
 
-						// current state must be "idle".
-						if (hook_state.renew) break;
-
-						// alternative name must be found.
-						auto* cache = find_script_name_cache(obj, filter_idx);
-						if (cache == nullptr) break;
-
-						// then update the filter name and adjust the layout.
-						hook_state = { true, cache };
-						::SetWindowTextW(exedit.filter_checkboxes[filter_idx], cache->caption.c_str());
-						adjust_layout(*cache, filter_idx);
-
-						// set the state back to "idle".
-						hook_state.renew = false;
-						break;
-					}
-				}
+				// then update the filter name and adjust the layout.
+				hook_state.push(filter_index, cache);
+				::SetWindowTextW(exedit.filter_checkboxes[filter_index], cache->caption.c_str());
+				hook_state.adjust_layout();
 				break;
+			}
 			}
 		}
 		break;
@@ -296,9 +315,8 @@ static inline LRESULT CALLBACK filter_sep_hook(HWND hwnd, UINT message, WPARAM w
 		::RemoveWindowSubclass(hwnd, &filter_sep_hook, id);
 		if (message != WM_SIZE) break;
 
-		if (hook_state.renew && hook_state.candidate != nullptr)
-			adjust_layout(*hook_state.candidate, static_cast<size_t>(data));
-		hook_state.renew = false;
+		// re-layout at the first call to this function.
+		hook_state.adjust_layout();
 		break;
 	}
 	}
@@ -310,25 +328,26 @@ static inline LRESULT CALLBACK filter_name_hook(HWND hwnd, UINT message, WPARAM 
 {
 	switch (message) {
 	case WM_SETTEXT:
+	{
 		// wparam: not used, lparam: reinterpret_cast<wchar_t const*>(lparam) is the new text.
-		if (auto const idx_obj = *exedit.SettingDialogObjectIndex; idx_obj >= 0) {
-			size_t const filter_idx = static_cast<size_t>(data);
 
-			// current state must be "idle".
-			if (hook_state.renew) break;
+		if (hook_state.is_valid()) break;
+		auto const idx_obj = *exedit.SettingDialogObjectIndex;
+		if (idx_obj < 0) break;
+		size_t const filter_idx = static_cast<size_t>(data);
 
-			// alternative name must be found.
-			auto* cache = find_script_name_cache((*exedit.ObjectArray_ptr)[idx_obj], filter_idx);
-			if (cache == nullptr) break;
+		// alternative name must be found.
+		auto* cache = find_script_name_cache((*exedit.ObjectArray_ptr)[idx_obj], filter_idx);
+		if (cache == nullptr) break;
 
-			// prepare the hook for the next call of WM_SIZE to the separator.
-			hook_state = { true, cache };
-			::SetWindowSubclass(exedit.filter_separators[filter_idx], &filter_sep_hook, id, data);
+		// prepare the hook for the next call of WM_SIZE to the separator.
+		hook_state.push(filter_idx, cache);
+		::SetWindowSubclass(exedit.filter_separators[filter_idx], &filter_sep_hook, id, data);
 
-			// replace the new window text.
-			lparam = reinterpret_cast<LPARAM>(cache->caption.c_str());
-		}
+		// replace with the new window text.
+		lparam = reinterpret_cast<LPARAM>(cache->caption.c_str());
 		break;
+	}
 
 	case WM_DESTROY:
 		::RemoveWindowSubclass(hwnd, &filter_name_hook, id);
