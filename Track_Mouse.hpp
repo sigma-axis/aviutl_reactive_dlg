@@ -41,13 +41,16 @@ namespace reactive_dlg::Track::Mouse
 			}
 		} wheel{ modkeys::shift, modkeys::alt, false, 10, true, false, true, modkeys::ctrl };
 
-		struct {
-			bool fixed;
+		struct : mk::modkey_boost {
+			bool fixed, vertical, reverse;
+			uint8_t step_size, r_step_size;
 
-			// TODO: vertical, reversed, alt_step.
-
-			constexpr bool is_enabled() const { return fixed; }
-		} drag{ true };
+			constexpr bool is_enabled() const {
+				return keys_frac != modkeys::shift || keys_boost != modkeys::none || def_frac
+					|| fixed || vertical || reverse
+					|| step_size > 1 || r_step_size > 1;
+			}
+		} drag{ modkeys::shift, modkeys::alt, false, 10, false, false, false, 1, 10 };
 
 		void load(char const* ini_file);
 	} settings;

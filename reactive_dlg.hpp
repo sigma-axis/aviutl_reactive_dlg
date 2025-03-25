@@ -115,6 +115,7 @@ inline constinit struct ExEdit092 {
 	uint8_t*	easing_specs_script;		// 0x231d90
 
 	uintptr_t	cmp_shift_state_easing;		// 0x02ca90
+	uintptr_t	push_cursor_track_drag;		// 0x02f4c6
 	byte*		call_easing_popup_menu;		// 0x02d4b5
 
 	// index: index of the script; zero1, zero2: zero, unknown otherwise.
@@ -162,6 +163,7 @@ private:
 		pick_addr(easing_specs_script,		0x231d90);
 
 		pick_addr(cmp_shift_state_easing,	0x02ca90);
+		pick_addr(push_cursor_track_drag,	0x02f4c6);
 		pick_addr(call_easing_popup_menu,	0x02d4b5);
 		pick_addr(load_easing_spec,			0x087940);
 

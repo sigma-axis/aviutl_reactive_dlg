@@ -23,6 +23,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 using byte = uint8_t;
 #include <exedit.hpp>
 
+#include "memory_protect.hpp"
 #include "inifile_op.hpp"
 #include "modkeys.hpp"
 
@@ -43,7 +44,8 @@ using namespace reactive_dlg::Track::Mouse;
 
 static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&settings); }
 
-static POINT mouse_pos_on_focused{};
+static constinit POINT prev_drag_pos{};
+static constinit int drag_step_size = -1, step_progress = 0;
 static inline HCURSOR cursor_on_wheel() {
 	static constinit HCURSOR cache = nullptr;
 	if (cache == nullptr)
@@ -59,20 +61,58 @@ static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM 
 {
 	switch (message) {
 	case WM_MOUSEMOVE:
-		if (*exedit.track_label_is_dragging != 0 && ::GetCapture() == hwnd) {
-			// カーソル位置固定ドラッグ．
-			POINT pt; ::GetCursorPos(&pt);
-			if (pt.x != mouse_pos_on_focused.x || pt.y != mouse_pos_on_focused.y) {
-				// rewind the cursor position.
-				::SetCursorPos(mouse_pos_on_focused.x, mouse_pos_on_focused.y);
+	{
+		POINT pt; ::GetCursorPos(&pt);
+		if (pt.x == prev_drag_pos.x && pt.y == prev_drag_pos.y) break;
+		mk::modkeys const mkeys{ (wparam & MK_CONTROL) != 0, (wparam & MK_SHIFT) != 0, ::GetKeyState(VK_MENU) < 0 };
 
-				// "fake" the starting point of the drag.
-				*exedit.track_label_start_drag_x -= pt.x - mouse_pos_on_focused.x;
+		// calculate the effective delta move.
+		int delta = settings.drag.vertical ?
+			prev_drag_pos.y - pt.y : pt.x - prev_drag_pos.x;
+		if (settings.drag.reverse) delta *= -1;
+		if (int co_step = (wparam & MK_RBUTTON) == 0 ? settings.drag.r_step_size : settings.drag.step_size;
+			co_step < drag_step_size) {
+			// "stepping" behavior of mouse drag.
+			step_progress += co_step * delta;
+			delta = step_progress / drag_step_size;
+			step_progress -= delta * drag_step_size;
+			if (step_progress < 0) {
+				step_progress += drag_step_size;
+				delta--;
 			}
+		}
+		// boosting drag.
+		if (settings.drag.boost(mkeys)) delta *= settings.drag.rate_boost;
+
+		if (settings.drag.fixed) {
+			// rewind the cursor position.
+			::SetCursorPos(prev_drag_pos.x, prev_drag_pos.y);
 
 			// hide the cursor.
 			::SetCursor(nullptr);
 		}
+		else {
+			// absorb the cursor move.
+			delta -= pt.x - prev_drag_pos.x;
+			prev_drag_pos = pt;
+		}
+
+		// "fake" the starting point of the drag.
+		*exedit.track_label_start_drag_x -= delta;
+
+		if (settings.drag.frac(mkeys) ^ mkeys.has_flags(mk::modkeys::shift)) {
+			// "fake" the shift key too. 
+			// ::GetKeyState(VK_SHIFT) takes effect, rather than (wparam & MK_SHIFT).
+			auto const prev = set_key_state(VK_SHIFT, (mkeys >= mk::modkeys::shift) ? 0 : 0x80);
+			auto const ret = ::DefSubclassProc(hwnd, message, wparam, lparam);
+			set_key_state(VK_SHIFT, prev);
+			return ret;
+		}
+		break;
+	}
+	case WM_RBUTTONUP:
+		// avoid the context menu from appearing.
+		if (settings.drag.step_size != settings.drag.r_step_size) return TRUE;
 		break;
 
 	case WM_CAPTURECHANGED:
@@ -93,9 +133,10 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 		if (auto ctrl = reinterpret_cast<HWND>(lparam); ctrl != nullptr) {
 			switch (wparam >> 16) {
 			case EN_SETFOCUS:
-				if (settings.drag.is_enabled() && find_trackinfo(wparam & 0xffff, ctrl) != nullptr) {
+				if (drag_step_size >= 0 && find_trackinfo(wparam & 0xffff, ctrl) != nullptr) {
 					// hook for tweaked drag behavior.
-					::GetCursorPos(&mouse_pos_on_focused);
+					::GetCursorPos(&prev_drag_pos);
+					step_progress = drag_step_size >> 1;
 					::SetWindowSubclass(ctrl, &track_label_hook, hook_uid(), {});
 				}
 				break;
@@ -104,6 +145,7 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 		break;
 
 	case WM_MOUSEWHEEL:
+		// control values by mouse wheel.
 		if (settings.wheel.enabled && *exedit.SettingDialogObjectIndex >= 0) {
 			mk::modkeys keys{ (wparam & MK_CONTROL) != 0, (wparam & MK_SHIFT) != 0, key_pressed_any(VK_MENU) };
 
@@ -146,6 +188,7 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 		}
 		break;
 	case WM_SETCURSOR:
+		// change mouse cursor when wheeling is ready.
 		if (settings.wheel.enabled && settings.wheel.cursor_react &&
 			*exedit.SettingDialogObjectIndex >= 0) {
 			// check if it's not in a dragging state.
@@ -261,6 +304,16 @@ bool expt::setup(HWND hwnd, bool initializing)
 				}
 			}
 
+			if (settings.drag.vertical) {
+				// 68 84 7F 00 00       push 7F84h  // IDC_SIZEWE
+				// V
+				// 68 85 7F 00 00       push 7F85h  // IDC_SIZENS
+				sigma_lib::memory::ProtectHelper::write(exedit.push_cursor_track_drag + 1, IDC_SIZENS);
+			}
+
+			// works as a "cached value" of settings.drag.is_enabled().
+			drag_step_size = settings.drag.is_enabled() ?
+				settings.drag.step_size * settings.drag.r_step_size : -1;
 		}
 		else {
 			::RemoveWindowSubclass(dlg, &setting_dlg_hook, hook_uid());
@@ -279,6 +332,7 @@ void expt::Settings::load(char const* ini_file)
 	using namespace sigma_lib::inifile;
 
 	constexpr auto section = "Track.Mouse";
+	constexpr int32_t min_drag_step_size = 1, max_drag_step_size = 200;
 
 #define read(func, fld, ...)	fld = read_ini_##func(fld, ini_file, section, #fld __VA_OPT__(,) __VA_ARGS__)
 
@@ -291,7 +345,15 @@ void expt::Settings::load(char const* ini_file)
 	read(bool,	wheel.cursor_react);
 	read(modkey,wheel.keys_activate);
 
+	read(modkey,drag.keys_frac);
+	read(modkey,drag.keys_boost);
+	read(bool,	drag.def_frac);
+	read(int,	drag.rate_boost, drag.min_rate_boost, drag.max_rate_boost);
 	read(bool,	drag.fixed);
+	read(bool,	drag.vertical);
+	read(bool,	drag.reverse);
+	read(int,	drag.step_size, min_drag_step_size, max_drag_step_size);
+	read(int,	drag.r_step_size, min_drag_step_size, max_drag_step_size);
 
 #undef read
 }
