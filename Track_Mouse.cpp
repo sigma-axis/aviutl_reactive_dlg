@@ -103,7 +103,7 @@ static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM 
 		if (settings.drag.frac(mkeys) ^ mkeys.has_flags(mk::modkeys::shift)) {
 			// "fake" the shift key too. 
 			// ::GetKeyState(VK_SHIFT) takes effect, rather than (wparam & MK_SHIFT).
-			auto const prev = set_key_state(VK_SHIFT, (mkeys >= mk::modkeys::shift) ? 0 : 0x80);
+			auto const prev = set_key_state(VK_SHIFT, mkeys.has_flags(mk::modkeys::shift) ? 0 : 0x80);
 			auto const ret = ::DefSubclassProc(hwnd, message, wparam, lparam);
 			set_key_state(VK_SHIFT, prev);
 			return ret;
