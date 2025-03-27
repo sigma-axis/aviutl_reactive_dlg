@@ -76,6 +76,9 @@ inline constinit struct ExEdit092 {
 	ExEdit::Object**	ObjectArray_ptr;	// 0x1e0fa4
 	int32_t*	NextObjectIdxArray;			// 0x1592d8
 	int32_t*	SettingDialogObjectIndex;	// 0x177a10
+	int32_t*	SelectingObjectNum_ptr;		// 0x167d88
+	int32_t*	SelectingObjectIndex;		// 0x179230
+
 	HWND*		hwnd_setting_dlg;			// 0x1539c8
 	//int32_t*	is_playing;					// 0x1a52ec; 0: editing, 1: playing.
 	HWND*		hwnd_edit_text;				// 0x236328
@@ -124,6 +127,9 @@ private:
 		pick_addr(ObjectArray_ptr,			0x1e0fa4);
 		pick_addr(NextObjectIdxArray,		0x1592d8);
 		pick_addr(SettingDialogObjectIndex,	0x177a10);
+		pick_addr(SelectingObjectNum_ptr,	0x167d88);
+		pick_addr(SelectingObjectIndex,		0x179230);
+
 		pick_addr(hwnd_setting_dlg,			0x1539c8);
 		//pick_addr(is_playing,				0x1a52ec);
 		pick_addr(hwnd_edit_text,			0x236328);
@@ -166,7 +172,7 @@ private:
 void update_setting_dialog(int index);
 
 // 編集データの変更でメイン画面を更新．
-void update_current_frame(size_t idx_track);
+void update_current_frame();
 
 namespace filter_id
 {

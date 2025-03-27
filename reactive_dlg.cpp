@@ -85,16 +85,21 @@ void update_setting_dialog(int index)
 }
 
 // 編集データの変更でメイン画面を更新．
-void update_current_frame(size_t idx_track)
+void update_current_frame()
 {
 	constexpr WPARAM cmd_update_main = 1003;
-	::SendMessageW(exedit.fp->hwnd, WM_COMMAND, cmd_update_main, (0x0001 << 16) | idx_track);
+	// lparam は多目的な用途があるみたいだが詳細不明．0 を送るのが無難っぽい？
+	// (0x0001 << 16) | (trackbar_index) でトラックバー左を操作．
+	// (0x0002 << 16) | (trackbar_index) でトラックバー右を操作，など．
+	// ただし，この2例だとトラックバーの値に修正変更が入ることがある．
+	::SendMessageW(exedit.fp->hwnd, WM_COMMAND, cmd_update_main, 0);
 }
 
 // 競合通知メッセージ．
 bool warn_conflict(wchar_t const* module_name, wchar_t const* ini_piece, char const* this_plugin_name)
 {
 	if (::GetModuleHandleW(module_name) == nullptr) return false;
+#pragma warning(suppress : 6387)
 	::MessageBoxW(exedit.fp->hwnd_parent, (std::wstring{ module_name } +
 		L" と競合しているため一部機能を無効化しました．\n"
 		"次回以降このメッセージを表示させないためには，設定ファイルで以下の設定をしてください:\n\n" +
@@ -284,7 +289,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v2.00-alpha2"
+#define PLUGIN_VERSION	"v2.00-alpha3"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name " " ver " by " author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
