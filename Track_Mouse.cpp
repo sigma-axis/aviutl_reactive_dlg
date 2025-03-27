@@ -46,6 +46,7 @@ static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&setting
 
 static constinit POINT prev_drag_pos{};
 static constinit int drag_step_size = -1, step_progress = 0;
+static constexpr bool settings_drag_is_enabled() { return drag_step_size >= 0; }
 static inline HCURSOR cursor_on_wheel() {
 	static constinit HCURSOR cache = nullptr;
 	if (cache == nullptr)
@@ -57,11 +58,14 @@ static inline HCURSOR cursor_on_wheel() {
 ////////////////////////////////
 // Hook callbacks.
 ////////////////////////////////
-static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto)
+static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto data)
 {
+	uint32_t const flags = static_cast<uint32_t>(data); // "waiting for right-button released" flag.
 	switch (message) {
 	case WM_MOUSEMOVE:
 	{
+		if (flags != 0) break;
+
 		POINT pt; ::GetCursorPos(&pt);
 		if (pt.x == prev_drag_pos.x && pt.y == prev_drag_pos.y) break;
 		mk::modkeys const mkeys{ (wparam & MK_CONTROL) != 0, (wparam & MK_SHIFT) != 0, ::GetKeyState(VK_MENU) < 0 };
@@ -112,14 +116,26 @@ static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM 
 	}
 	case WM_RBUTTONUP:
 		// avoid the context menu from appearing.
-		if (settings.drag.step_size != settings.drag.r_step_size) return TRUE;
+		if (settings.drag.step_size != settings.drag.r_step_size) {
+			if (flags != 0) ::RemoveWindowSubclass(hwnd, &track_label_hook, id);
+			return 0;
+		}
 		break;
 
 	case WM_CAPTURECHANGED:
-		// ignore when re-capturing the same window.
-		if (hwnd == reinterpret_cast<HWND>(lparam)) break;
-		[[fallthrough]];
-	case WM_KILLFOCUS:
+		if (flags == 0) {
+			// ignore when re-capturing the same window.
+			if (hwnd == reinterpret_cast<HWND>(lparam)) break;
+			if (nullptr == reinterpret_cast<HWND>(lparam) &&
+				settings.drag.step_size != settings.drag.r_step_size &&
+				::GetKeyState(VK_RBUTTON) < 0) {
+				// set the flag to "wait for right-button to be released" state.
+				::SetWindowSubclass(hwnd, &track_label_hook, id, 1);
+				break;
+			}
+		}
+	[[fallthrough]];
+	case WM_MOUSELEAVE:
 		::RemoveWindowSubclass(hwnd, &track_label_hook, id);
 		break;
 	}
@@ -133,11 +149,23 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 		if (auto ctrl = reinterpret_cast<HWND>(lparam); ctrl != nullptr) {
 			switch (wparam >> 16) {
 			case EN_SETFOCUS:
-				if (drag_step_size >= 0 && find_trackinfo(wparam & 0xffff, ctrl) != nullptr) {
+				if (settings_drag_is_enabled() && find_trackinfo(wparam & 0xffff, ctrl) != nullptr &&
+					::GetCapture() == ctrl) {
 					// hook for tweaked drag behavior.
 					::GetCursorPos(&prev_drag_pos);
 					step_progress = drag_step_size >> 1;
-					::SetWindowSubclass(ctrl, &track_label_hook, hook_uid(), {});
+
+					if (settings.drag.step_size != settings.drag.r_step_size) {
+						TRACKMOUSEEVENT tme{ .cbSize = sizeof(tme), .dwFlags = TME_LEAVE, .hwndTrack = ctrl };
+						auto result = ::TrackMouseEvent(&tme);
+					}
+					::SetWindowSubclass(ctrl, &track_label_hook, hook_uid(), 0);
+					/* known issue:
+					* when tab key is pressed while dragging to move the focus,
+					* and the next time the user initiates the drag, the dragged
+					* edit control will be the focused one wherever the mouse position is,
+					* and the hook by this plugin won't take place this time.
+					*/
 				}
 				break;
 			}
