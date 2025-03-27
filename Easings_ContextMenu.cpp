@@ -63,20 +63,13 @@ static inline int find_matching_track(ExEdit::Object const& obj, ExEdit::Object 
 	if (&obj == &src_obj) return src_track_index;
 
 	// find the filter index that contains the trackbar index.
-	int src_filter_index = -1, filter_track_index = src_track_index;
-	for (auto& src_filter : src_obj.filter_param) {
-		if (!src_filter.is_valid() ||
-			src_track_index < src_filter.track_begin) break;
-		filter_track_index = src_track_index - src_filter.track_begin;
-		src_filter_index++;
-	}
-	if (src_filter_index < 0 || src_filter_index >= ExEdit::Object::MAX_FILTER) std::unreachable();
+	auto [src_filter_index, filter_track_index] = find_filter_from_track(src_obj, src_track_index);
 
 	auto&src_filter = src_obj.filter_param[src_filter_index];
-	int filter_index = src_filter_index;
+	size_t filter_index = src_filter_index;
 
 	// for an output filter, match with the output filter of the other object.
-	if (int count_filters = obj.countFilters();
+	if (size_t count_filters = obj.countFilters();
 		has_flag_or(exedit.loaded_filter_table[src_filter.id]->flag, ExEdit::Filter::Flag::Output))
 		filter_index = count_filters - 1;
 	else if (filter_index >= count_filters) return -1;
@@ -205,18 +198,9 @@ struct target_tracks {
 		for (auto e = targets.end(), i = targets.begin(); i != e; ) {
 			auto const& obj_i = objects[i->first];
 			if (int const track_index_i = find_matching_track(obj_i, obj, track_index);
-				track_index_i >= 0) {
-				// initialize the content.
-				auto& target = i->second;
-				i++;
-				target.init(obj_i, track_index_i);
-			}
-			else {
-				// eliminate the element.
-				auto to_erase = i;
-				i++;
-				targets.erase(to_erase);
-			}
+				track_index_i >= 0)
+				(i++)->second.init(obj_i, track_index_i); // initialize the content.
+			else targets.erase(i++); // eliminate the element.
 		}
 
 		// inspect min/max of number of values, as well as flipping ones.

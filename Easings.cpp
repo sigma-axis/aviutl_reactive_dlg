@@ -320,3 +320,14 @@ int expt::convert_value_disp2int(double val, int denom, int prec, int min, int m
 	}
 	return std::clamp(value, min, max);
 }
+
+std::pair<size_t, size_t> expt::find_filter_from_track(ExEdit::Object const& obj, size_t track_index)
+{
+	size_t filter_index = 0;
+	for (; filter_index < std::size(obj.filter_param) - 1; filter_index++) {
+		auto filter = obj.filter_param[filter_index + 1];
+		if (!filter.is_valid() ||
+			track_index < static_cast<size_t>(filter.track_begin)) break;
+	}
+	return { filter_index, track_index - static_cast<size_t>(obj.filter_param[filter_index].track_begin) };
+}

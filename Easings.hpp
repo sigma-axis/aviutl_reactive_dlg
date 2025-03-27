@@ -149,4 +149,12 @@ namespace reactive_dlg::Easings
 	/// converts a displayed value to an internal value,
 	/// rounding and clamping into min-max range.
 	int convert_value_disp2int(double val, int denom, int prec, int min, int max);
+
+	/// finds the filter index and relative track index of a given track index.
+	/// @param obj the object the given trackbar belongs to.
+	/// @param track_index the index of the trackbar, counted from the beginning of the object.
+	/// @return the pair `[filter_index, relative_track_index]`,
+	/// where `filter_index` is the index of the filter,
+	/// and `relative_track_index` is the index of the trackbar counted from the beginning of the filter.
+	std::pair<size_t, size_t> find_filter_from_track(ExEdit::Object const& obj, size_t track_index);
 }
