@@ -73,6 +73,7 @@ inline constinit struct ExEdit092 {
 	AviUtl::FilterPlugin* fp;
 	bool init(AviUtl::FilterPlugin* this_fp);
 
+	//int32_t*	ObjectAllocNum;				// 0x1e0fa0
 	ExEdit::Object**	ObjectArray_ptr;	// 0x1e0fa4
 	int32_t*	NextObjectIdxArray;			// 0x1592d8
 	int32_t*	SettingDialogObjectIndex;	// 0x177a10
@@ -116,6 +117,9 @@ inline constinit struct ExEdit092 {
 	void(*nextundo)();						// 0x08d150
 	void(*setundo)(uint32_t, uint32_t);		// 0x08d290
 
+	// access to the functions for filter related calculations.
+	ExEdit::Filter* (*get_filterp)(ExEdit::ObjectFilterIndex); // 0x047b00
+
 	// updating the setting dialog.
 	void(*update_setting_dlg)(int32_t idx_object); // 0x0305e0
 
@@ -124,6 +128,7 @@ private:
 	{
 		auto pick_addr = [exedit_base=reinterpret_cast<uintptr_t>(dll_hinst)]
 			<class T>(T& target, ptrdiff_t offset) { target = std::bit_cast<T>(exedit_base + offset); };
+		//pick_addr(ObjectAllocNum,			0x1e0fa0);
 		pick_addr(ObjectArray_ptr,			0x1e0fa4);
 		pick_addr(NextObjectIdxArray,		0x1592d8);
 		pick_addr(SettingDialogObjectIndex,	0x177a10);
@@ -163,6 +168,8 @@ private:
 
 		pick_addr(nextundo,					0x08d150);
 		pick_addr(setundo,					0x08d290);
+
+		pick_addr(get_filterp,				0x047b00);
 
 		pick_addr(update_setting_dlg,		0x0305e0);
 	}

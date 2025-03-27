@@ -157,4 +157,12 @@ namespace reactive_dlg::Easings
 	/// where `filter_index` is the index of the filter,
 	/// and `relative_track_index` is the index of the trackbar counted from the beginning of the filter.
 	std::pair<size_t, size_t> find_filter_from_track(ExEdit::Object const& obj, size_t track_index);
+
+	/// composes `ExEdit::ObjectFilterIndex` from object index and filter index.
+	/// @param obj_index the index of the object.
+	/// @param filter_index the index of the filter.
+	/// @return the composed `ExEdit::ObjectFilterIndex`.
+	inline ExEdit::ObjectFilterIndex object_filter_index(size_t obj_index, size_t filter_index) {
+		return static_cast<ExEdit::ObjectFilterIndex>((obj_index + 1) | (filter_index << 16));
+	}
 }

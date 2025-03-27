@@ -11,6 +11,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 */
 
 #include <cstdint>
+#include <cmath>
 #include <string>
 
 #define NOMINMAX
@@ -68,20 +69,257 @@ static inline std::wstring format_easing(ExEdit::Object::TrackMode const& mode, 
 	return ret;
 }
 
+struct section_graph {
+	std::vector<std::pair<float, float>> points;
+	float min, max, val_left, val_right;
+
+	void clear() { points.clear(); min = max = val_left = val_right = 0; }
+	bool empty() const { return points.empty(); }
+
+	constexpr static int max_points = 17,
+		width = 64, height = 64;
+	constexpr static bool enabled = true;
+
+	inline void plot(ExEdit::Object const& obj, size_t index, int denom);
+	inline void draw(HDC dc, int L, int T, int R, int B) const;
+
+private:
+	constexpr static int margin_lr = 3, margin_tb = 3;
+};
+
 // storage of the tooltip content.
 #ifndef _DEBUG
 constinit
 #endif // !_DEBUG
 static struct {
-	std::wstring easing, values;
-	int w, h, h2;
+	int width, height;
 
-	// TODO: let this class handle most of the layout-draw jobs.
+	std::wstring easing, values;
+	section_graph graph;
+	int pos_y_values, pos_x_graph;
+
+	inline void measure(size_t index, HDC hdc);
+	inline void draw(HDC dc, RECT rc) const;
+
+private:
+	constexpr static int
+		margin_r_easing = 8,
+		margin_b_easing = 4, margin_b_graph = 4;
+	constexpr static UINT draw_text_options = DT_NOCLIP | DT_HIDEPREFIX;
+
 } tooltip_content{};
 
 // color conversion.
 constexpr auto bgr2rgb(int32_t c) {
 	return (std::rotl<uint32_t>(c, 16) & 0x00ff00ff) | (c & 0x0000ff00);
+}
+
+
+////////////////////////////////
+// Tooltip drawings.
+////////////////////////////////
+inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int denom)
+{
+	// prepare environment.
+	auto const [filter_index, rel_idx] = find_filter_from_track(obj, index);
+	auto const ofi = object_filter_index(*exedit.SettingDialogObjectIndex, filter_index);
+	auto const* const efp = exedit.get_filterp(ofi);
+	if (efp == nullptr) {
+		clear();
+		return;
+	}
+
+	// select frames.
+	int const frame_begin = obj.frame_begin, frame_len = obj.frame_end + 1 - frame_begin;
+	float const len_f = static_cast<float>(frame_len), denom_f = static_cast<float>(denom);
+	std::vector<int> frames{}; frames.reserve(max_points); frames.push_back(frame_begin);
+	for (int i = 0; i < max_points; i++) {
+		int const f = frame_begin + (i * frame_len) / (max_points - 1);
+		if (frames.back() < f) frames.push_back(f);
+	}
+
+	// store the left and right values.
+	val_left = obj.track_value_left[index] / denom_f;
+	val_right = obj.track_value_right[index] / denom_f;
+	if (val_left < val_right) min = val_left, max = val_right;
+	else min = val_right, max = val_left;
+
+	// calculate each point.
+	points.clear(); points.reserve(frames.size());
+	char* const arg_name = reinterpret_cast<char*>(1 + rel_idx); // represents the trackbar index.
+	for (auto f : frames) {
+		int val;
+		efp->exfunc->calc_trackbar(ofi, f, 0, &val, arg_name);
+
+		// store the point and the statistics.
+		float const val_f = val / denom_f;
+		points.emplace_back((f - frame_begin) / len_f, val_f);
+		if (val_f < min) min = val_f;
+		else if (max < val_f) max = val_f;
+	}
+}
+
+static inline void draw_line(HDC dc, int x1, int y1, int x2, int y2) {
+	POINT pts[] = { {x1, y1}, {x2, y2} };
+	::Polyline(dc, pts, std::size(pts));
+}
+
+inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
+{
+	int const
+		l = L + margin_lr, r = R - margin_lr,
+		t = T + margin_tb, b = B - margin_tb;
+	auto const func_x = [l, r](float x) -> int {
+		return std::lroundf((1 - x) * l + x * r);
+	};
+	auto const func_y = [m = min, M = max, t, b](float y) -> int {
+		if (m >= M) return (t + b + 1) >> 1;
+		return std::lroundf(((y - m) * t - (y - M) * b) / (M - m));
+	};
+
+	auto const old_pen = ::SelectObject(dc, ::GetStockObject(DC_PEN));
+	auto const old_col = ::GetDCPenColor(dc);
+	int const pos_l = func_y(val_left), pos_r = func_y(val_right),
+		pos_1m = func_y(0.75f * val_left + 0.25f * val_right),
+		pos_2m = func_y(0.50f * (val_left + val_right)),
+		pos_3m = func_y(0.25f * val_left + 0.75f * val_right);
+
+	::SetDCPenColor(dc, 0xc0c0c0);
+	draw_line(dc, L, pos_1m, R, pos_1m);
+	draw_line(dc, L, pos_2m, R, pos_2m);
+	draw_line(dc, L, pos_3m, R, pos_3m);
+	draw_line(dc, (3 * l + r + 2) >> 2, T, (3 * l + r + 2) >> 2, B);
+	draw_line(dc, (l + r + 1) >> 1, T, (l + r + 1) >> 1, B);
+	draw_line(dc, (l + 3 * r + 2) >> 2, T, (l + 3 * r + 2) >> 2, B);
+
+	::SetDCPenColor(dc, 0x808080);
+	draw_line(dc, L, pos_l, R, pos_l);
+	draw_line(dc, L, pos_r, R, pos_r);
+
+	::SetDCPenColor(dc, 0x000000);
+	draw_line(dc, l, T, l, B);
+	draw_line(dc, r, T, r, B);
+
+	HPEN pen = ::CreatePen(PS_SOLID, 2, 0x0000ff);
+	::SelectObject(dc, pen);
+	::MoveToEx(	dc, l, func_y(points.front().second), nullptr);
+	for (auto const& [x, y] : std::span{ points }.subspan(1))
+		::LineTo(dc, func_x(x), func_y(y));
+
+	::SetDCPenColor(dc, old_col);
+	::SelectObject(dc, old_pen);
+	::DeleteObject(pen);
+}
+
+inline void decltype(tooltip_content)::measure(size_t index, HDC hdc)
+{
+	auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
+	auto const& mode = obj.track_mode[index];
+	easing_name_spec name_spec{ mode };
+
+	// the name and desc of the easing.
+	if (settings.mode) easing = format_easing(mode, obj.track_param[index], name_spec);
+
+	// values at each midpoint.
+	if (settings.values.is_enabled()) {
+		if (obj.index_midpt_leader < 0 || // no mid-points.
+			name_spec.spec.twopoints)
+			values = L"";
+		else {
+			values = formatted_values{ obj, index }.span()
+				.trim_from_sect(settings.values.left, settings.values.right)
+				.to_string(exedit.trackinfo_left[index].precision(), true, true, settings.values.zigzag);
+		}
+	}
+
+	// easing graph.
+	if (section_graph::enabled)
+		graph.plot(obj, index, exedit.trackinfo_left[index].denominator());
+
+	// measure those text.
+	RECT rc1{}, rc2{};
+	if (!easing.empty())
+		::DrawTextW(hdc, easing.c_str(), easing.size(),
+			&rc1, DT_CALCRECT | draw_text_options);
+	if (!values.empty())
+		::DrawTextW(hdc, values.c_str(), values.size(),
+			&rc2, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
+
+	// layout the contents and detemine the size.
+	int const
+		w_ease = rc1.right - rc1.left, h_ease = rc1.bottom - rc1.top,
+		w_vals = rc2.right - rc2.left, h_vals = rc2.bottom - rc2.top;
+	if (w_ease < w_vals) {
+		if (!easing.empty() && !graph.empty()) {
+			pos_x_graph = std::max(w_ease + margin_r_easing, w_vals - graph.width);
+			width = std::max(w_vals, pos_x_graph + graph.width);
+		}
+		else {
+			pos_x_graph = 0;
+			width = std::max(w_vals, graph.empty() ? 0 : graph.width);
+		}
+
+		if (easing.empty() && graph.empty()) {
+			pos_y_values = 0;
+			height = h_vals;
+		}
+		else {
+			pos_y_values = std::max(
+				easing.empty() ? 0 : h_ease + margin_b_easing,
+				graph.empty() ? 0 : graph.height + margin_b_graph);
+			height = pos_y_values + h_vals;
+		}
+	}
+	else {
+		if (easing.empty() && values.empty()) {
+			pos_x_graph = 0;
+			width = graph.width;
+		}
+		else {
+			pos_x_graph = std::max(
+				easing.empty() ? 0 : w_ease + margin_r_easing,
+				values.empty() ? 0 : w_vals + margin_r_easing);
+			width = pos_x_graph + graph.width;
+		}
+
+		if (!easing.empty() && !values.empty()) {
+			pos_y_values = h_ease + margin_b_easing;
+			height = std::max(
+				graph.empty() ? 0 : graph.height + margin_b_graph,
+				pos_y_values + h_vals);
+		}
+		else {
+			pos_y_values = 0;
+			height = std::max(
+				graph.empty() ? 0 : graph.height + margin_b_graph,
+				std::max(h_ease, h_vals));
+		}
+	}
+}
+
+inline void decltype(tooltip_content)::draw(HDC dc, RECT rc) const
+{
+	// change the text color if specified.
+	if (settings.text_color >= 0)
+		::SetTextColor(dc, bgr2rgb(settings.text_color));
+
+	// actual drawing, using content.easing and content.values.
+	if (!easing.empty()) {
+		RECT rc_easing = rc;
+		::DrawTextW(dc, easing.c_str(), easing.size(),
+			&rc_easing, draw_text_options);
+	}
+	if (!values.empty()) {
+		RECT rc_vals = rc;
+		rc_vals.top += pos_y_values;
+		::DrawTextW(dc, values.c_str(), values.size(),
+			&rc_vals, draw_text_options | DT_SINGLELINE);
+	}
+
+	if (!graph.empty()) {
+		int const L = rc.left + pos_x_graph;
+		graph.draw(dc, L, rc.top, L + graph.width, rc.top + graph.height);
+	}
 }
 
 
@@ -132,8 +370,8 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				RECT rc;
 				::GetWindowRect(tooltip, &rc);
 				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
-				rc.right = rc.left + tooltip_content.w + 2; // add slight extra space on the right and bottom.
-				rc.bottom = rc.top + tooltip_content.h + 1;
+				rc.right = rc.left + tooltip_content.width + 2; // add slight extra space on the right and bottom.
+				rc.bottom = rc.top + tooltip_content.height + 1;
 				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
 
 				// adjust the position not to clip edges of screens.
@@ -147,66 +385,14 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 
 			case NM_CUSTOMDRAW:
 			{
-				constexpr int gap_h = 4;
-				constexpr UINT draw_text_options = DT_NOCLIP | DT_HIDEPREFIX;
 				auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
-				if (::IsWindowVisible(tooltip) == FALSE) {
+				if (::IsWindowVisible(tooltip) == FALSE)
 					// prepare the tooltip content.
-
-					size_t idx = static_cast<size_t>(data);
-					auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
-					auto const& mode = obj.track_mode[idx];
-					easing_name_spec name_spec{ mode };
-
-					// the name and desc of the easing.
-					if (settings.mode) tooltip_content.easing = format_easing(mode, obj.track_param[idx], name_spec);
-
-					// values at each midpoint.
-					if (settings.values.is_enabled()) {
-						if (obj.index_midpt_leader < 0 || // no mid-points.
-							(mode.num & 0x0f) == 0 || // static value.
-							name_spec.spec.twopoints)
-							tooltip_content.values = L"";
-						else {
-							tooltip_content.values = formatted_values{ obj, idx }.span()
-								.trim_from_sect(settings.values.left, settings.values.right)
-								.to_string(exedit.trackinfo_left[idx].precision(), true, true, settings.values.zigzag);
-						}
-					}
-
-					// measure those text.
-					RECT rc1{}, rc2{};
-					if (!tooltip_content.easing.empty())
-						::DrawTextW(dhdr->nmcd.hdc, tooltip_content.easing.c_str(), tooltip_content.easing.size(),
-							&rc1, DT_CALCRECT | draw_text_options);
-					if (!tooltip_content.values.empty())
-						::DrawTextW(dhdr->nmcd.hdc, tooltip_content.values.c_str(), tooltip_content.values.size(),
-							&rc2, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
-
-					// layout the contents and detemine the size.
-					tooltip_content.w = std::max(rc1.right - rc1.left, rc2.right - rc2.left);
-					tooltip_content.h2 = rc1.bottom - rc1.top;
-					if (!tooltip_content.easing.empty() && !tooltip_content.values.empty())
-						tooltip_content.h2 += gap_h;
-					tooltip_content.h = tooltip_content.h2 + (rc2.bottom - rc2.top);
-				}
-				else if (dhdr->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYPOSTPAINT;
-				else {
-					// change the text color if specified.
-					if (settings.text_color >= 0)
-						::SetTextColor(dhdr->nmcd.hdc, bgr2rgb(settings.text_color));
-
-					// actual drawing, using content.easing and content.values.
-					RECT rc{ dhdr->nmcd.rc };
-					if (!tooltip_content.easing.empty())
-						::DrawTextW(dhdr->nmcd.hdc, tooltip_content.easing.c_str(), tooltip_content.easing.size(),
-							&rc, draw_text_options);
-					if (!tooltip_content.values.empty()) {
-						rc.top += tooltip_content.h2;
-						::DrawTextW(dhdr->nmcd.hdc, tooltip_content.values.c_str(), tooltip_content.values.size(),
-							&rc, draw_text_options | DT_SINGLELINE);
-					}
-				}
+					tooltip_content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
+				else if (dhdr->nmcd.dwDrawStage != CDDS_PREPAINT)
+					// draw the content.
+					tooltip_content.draw(dhdr->nmcd.hdc, dhdr->nmcd.rc);
+				else return CDRF_NOTIFYPOSTPAINT;
 				break;
 			}
 			}
