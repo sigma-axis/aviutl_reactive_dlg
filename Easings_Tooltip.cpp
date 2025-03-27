@@ -120,7 +120,9 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				auto const& mode = obj.track_mode[idx];
 				if ((mode.num & 0x0f) == 0) break; // 移動無し
 				if (settings.mode ||
-					(settings.values.is_enabled() && !easing_name_spec(mode).spec.twopoints))
+					(settings.values.is_enabled() && !(
+						obj.index_midpt_leader < 0 || // no mid-points.
+						easing_name_spec(mode).spec.twopoints)))
 					reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = const_cast<char*>(" ");
 				break;
 			}
