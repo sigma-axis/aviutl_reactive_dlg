@@ -85,7 +85,9 @@ namespace reactive_dlg::Easings
 				left_trail = size();
 				right_trail = 0;
 			}
-			return trim_from_end(section - left_trail, size() - section - 2 - right_trail);
+			return trim_from_end(
+				left_trail < 0 ? 0 : section - left_trail,
+				right_trail < 0 ? 0 : size() - section - 2 - right_trail);
 		}
 		formatted_valuespan trim_from_sect_l(int trail) const { return trim_from_sect(trail, size()); }
 		formatted_valuespan trim_from_sect_r(int trail) const { return trim_from_sect(size(), trail); }
