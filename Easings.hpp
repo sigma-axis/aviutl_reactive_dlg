@@ -64,7 +64,7 @@ namespace reactive_dlg::Easings
 		easing_name_spec(ExEdit::Object::TrackMode const& mode);
 	};
 
-	// copy-paste formatting. adjusted formatting.
+	// copy-paste formatting, adjusted for displaying.
 	struct formatted_valuespan {
 		std::span<double const> values;
 		int section;
