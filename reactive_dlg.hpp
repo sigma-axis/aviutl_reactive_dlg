@@ -118,7 +118,7 @@ inline constinit struct ExEdit092 {
 	void(*setundo)(uint32_t, uint32_t);		// 0x08d290
 
 	// access to the functions for filter related calculations.
-	ExEdit::Filter* (*get_filterp)(ExEdit::ObjectFilterIndex); // 0x047b00
+	BOOL(*calc_trackbar)(ExEdit::ObjectFilterIndex, int32_t, int32_t, int32_t*, char*); // 0x04d040
 
 	// updating the setting dialog.
 	void(*update_setting_dlg)(int32_t idx_object); // 0x0305e0
@@ -169,7 +169,7 @@ private:
 		pick_addr(nextundo,					0x08d150);
 		pick_addr(setundo,					0x08d290);
 
-		pick_addr(get_filterp,				0x047b00);
+		pick_addr(calc_trackbar,			0x04d040);
 
 		pick_addr(update_setting_dlg,		0x0305e0);
 	}
