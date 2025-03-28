@@ -105,14 +105,10 @@ public:
 struct section_graph {
 	std::vector<std::pair<float, float>> points;
 	float min, max, val_left, val_right;
+	static inline HPEN pen = nullptr;
 
 	void clear() { points.clear(); min = max = val_left = val_right = 0; }
 	bool empty() const { return points.empty(); }
-
-	//constexpr static int max_points = 17,
-	//	width = 64, height = 64,
-	//	scale = 2, thick = 3;
-	//constexpr static bool enabled = true;
 
 	inline void plot(ExEdit::Object const& obj, size_t index, int denom);
 	inline void draw(HDC dc, int L, int T, int R, int B) const;
@@ -147,6 +143,31 @@ private:
 constexpr auto bgr2rgb(int32_t c) {
 	return (std::rotl<uint32_t>(c, 16) & 0x00ff00ff) | (c & 0x0000ff00);
 }
+
+static inline struct graph_pen {
+	constexpr operator bool() const { return pen != nullptr; }
+	operator HPEN() {
+		if (pen == nullptr) {
+			LOGBRUSH lb{
+				.lbStyle = BS_SOLID,
+				.lbColor = bgr2rgb(settings.graph.curve_color),
+			};
+			pen = ::ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND,
+				settings.graph.curve_width, &lb, 0, nullptr);
+		}
+		return pen;
+	}
+	void delete_object() {
+		if (pen != nullptr) {
+			::DeleteObject(pen);
+			pen = nullptr;
+		}
+	}
+	~graph_pen() { delete_object(); }
+
+private:
+	HPEN pen = nullptr;
+} graph_pen;
 
 
 ////////////////////////////////
@@ -245,19 +266,20 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 	line_v(r);
 
 	// draw the easing curve.
-	::SelectObject(dc, ::CreatePen(PS_SOLID,
-		settings.graph.curve_width, bgr2rgb(settings.graph.curve_color)));
+	::SelectObject(dc, graph_pen);
 	if (min < max) {
-		::MoveToEx(	dc, l, func_y(points.front().second), nullptr);
-		for (auto const& [x, y] : std::span{ points }.subspan(1))
-			::LineTo(dc, func_x(x), func_y(y));
+		std::vector<POINT> pts{}; pts.reserve(points.size());
+		for (auto const& [x, y] : points)
+			pts.emplace_back(func_x(x), func_y(y));
+		::Polyline(dc, pts.data(), std::size(pts));
 	}
 	else {
 		auto const Y = (t + b + 1) >> 1;
 		draw_line(l, Y, r, Y);
 	}
 
-	::DeleteObject(::SelectObject(dc, old_pen));
+	// set the pen back.
+	::SelectObject(dc, old_pen);
 }
 
 inline void decltype(tooltip_content)::measure(size_t index, HDC hdc)
