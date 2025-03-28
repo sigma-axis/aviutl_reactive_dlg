@@ -25,7 +25,7 @@ using byte = uint8_t;
 #include <exedit.hpp>
 
 #include "reactive_dlg.hpp"
-#include "FilterName.hpp"
+#include "Filters_ScriptName.hpp"
 #include "inifile_op.hpp"
 #include "slim_formatter.hpp"
 #include "str_encodes.hpp"
@@ -40,7 +40,7 @@ NS_BEGIN()
 ////////////////////////////////
 // フィルタ効果のスクリプト名表示．
 ////////////////////////////////
-using namespace reactive_dlg::FilterName;
+using namespace reactive_dlg::Filters::ScriptName;
 
 static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&settings); }
 
@@ -361,7 +361,7 @@ NS_END
 ////////////////////////////////
 // exported functions.
 ////////////////////////////////
-namespace expt = reactive_dlg::FilterName;
+namespace expt = reactive_dlg::Filters::ScriptName;
 
 bool expt::setup(HWND hwnd, bool initializing)
 {
@@ -396,7 +396,7 @@ void expt::Settings::load(char const* ini_file)
 {
 	using namespace sigma_lib::inifile;
 
-	constexpr auto section = "FilterName";
+	constexpr auto section = "Filters.ScriptName";
 	constexpr size_t max_str_len = 256;
 
 #define read(fld)	if (auto s = read_ini_string(u8"", ini_file, section, #fld, max_str_len); s != L"") fld = std::make_unique<std::wstring>(std::move(s))
@@ -412,7 +412,7 @@ void expt::Settings::load(char const* ini_file)
 void expt::Settings::check_conflict(char const* this_plugin_name)
 {
 	if (is_enabled() && warn_conflict(L"filter_name.auf",
-		L"[FilterName]\n"
+		L"[Filters.ScriptName]\n"
 		L"anim_eff_fmt=\"\"\n"
 		L"cust_std_fmt=\"\"\n"
 		L"cust_ext_fmt=\"\"\n"

@@ -24,7 +24,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 ////////////////////////////////
 // フィルタ効果のスクリプト名表示．
 ////////////////////////////////
-namespace reactive_dlg::FilterName
+namespace reactive_dlg::Filters::ScriptName
 {
 	inline constinit struct Settings {
 		std::unique_ptr<std::wstring>

@@ -107,7 +107,7 @@
     <ClInclude Include="Easings_ContextMenu.hpp" />
     <ClInclude Include="Easings_Misc.hpp" />
     <ClInclude Include="Easings_Tooltip.hpp" />
-    <ClInclude Include="FilterName.hpp" />
+    <ClInclude Include="Filters_ScriptName.hpp" />
     <ClInclude Include="inifile_op.hpp" />
     <ClInclude Include="memory_protect.hpp" />
     <ClInclude Include="modkeys.hpp" />
@@ -127,7 +127,7 @@
     <ClCompile Include="Easings_ContextMenu.cpp" />
     <ClCompile Include="Easings_Misc.cpp" />
     <ClCompile Include="Easings_Tooltip.cpp" />
-    <ClCompile Include="FilterName.cpp" />
+    <ClCompile Include="Filters_ScriptName.cpp" />
     <ClCompile Include="reactive_dlg.cpp" />
     <ClCompile Include="TextBox.cpp" />
     <ClCompile Include="TrackLabel.cpp" />

@@ -45,7 +45,7 @@
     <ClInclude Include="Dropdown_Keyboard.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="FilterName.hpp">
+    <ClInclude Include="Filters_ScriptName.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TrackLabel.hpp">
@@ -83,7 +83,7 @@
     <ClCompile Include="Dropdown_Keyboard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="FilterName.cpp">
+    <ClCompile Include="Filters_ScriptName.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TrackLabel.cpp">

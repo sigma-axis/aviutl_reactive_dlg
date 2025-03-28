@@ -40,7 +40,7 @@ using byte = uint8_t;
 #include "Track_Keyboard.hpp"
 #include "Track_Mouse.hpp"
 #include "Track_Button.hpp"
-#include "FilterName.hpp"
+#include "Filters_ScriptName.hpp"
 #include "Easings_Misc.hpp"
 #include "Easings_Tooltip.hpp"
 #include "Easings_ContextMenu.hpp"
@@ -209,14 +209,14 @@ BOOL func_init(AviUtl::FilterPlugin* fp)
 	Track::Keyboard::		settings.load(ini_file);
 	Track::Mouse::			settings.load(ini_file);
 	Track::Button::			settings.load(ini_file);
-	FilterName::			settings.load(ini_file);
+	Filters::ScriptName::	settings.load(ini_file);
 	Easings::Misc::			settings.load(ini_file);
 	Easings::Tooltip::		settings.load(ini_file);
 	Easings::ContextMenu::	settings.load(ini_file);
 
 	// 競合確認．
 	Track::Button::	settings.check_conflict(fp->name);
-	FilterName::	settings.check_conflict(fp->name);
+	Filters::ScriptName::settings.check_conflict(fp->name);
 
 	return TRUE;
 }
@@ -232,7 +232,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, AviUtl:
 		Track::Keyboard::		setup(hwnd, true);
 		Track::Mouse::			setup(hwnd, true);
 		Track::Button::			setup(hwnd, true);
-		FilterName::			setup(hwnd, true);
+		Filters::ScriptName::	setup(hwnd, true);
 		Easings::Misc::			setup(hwnd, true);
 		Easings::Tooltip::		setup(hwnd, true);
 		Easings::ContextMenu::	setup(hwnd, true);
@@ -244,7 +244,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, AviUtl:
 		Track::Keyboard::		setup(hwnd, false);
 		Track::Mouse::			setup(hwnd, false);
 		Track::Button::			setup(hwnd, false);
-		FilterName::			setup(hwnd, false);
+		Filters::ScriptName::	setup(hwnd, false);
 		Easings::Misc::			setup(hwnd, false);
 		Easings::Tooltip::		setup(hwnd, false);
 		Easings::ContextMenu::	setup(hwnd, false);
