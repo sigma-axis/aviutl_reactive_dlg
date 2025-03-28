@@ -39,9 +39,11 @@ namespace reactive_dlg::Easings::Tooltip
 		struct {
 			bool enabled;
 			int32_t width, height;
-			uint32_t plots, scale, curve_width;
+			uint32_t plots, curve_width;
 			uint32_t curve_color, line_color_1, line_color_2, line_color_3;
-		} graph{ true, 64, 64, 17, 2, 3, 0xff0000, 0x000000, 0x808080, 0xc0c0c0 };
+
+			constexpr static size_t pixel_scale = 256;
+		} graph{ true, 64, 64, 17, 384, 0xff0000, 0x000000, 0x808080, 0xc0c0c0 };
 
 		void load(char const* ini_file);
 		bool is_enabled() const {

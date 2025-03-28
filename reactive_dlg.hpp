@@ -118,6 +118,7 @@ inline constinit struct ExEdit092 {
 	void(*setundo)(uint32_t, uint32_t);		// 0x08d290
 
 	// access to the functions for filter related calculations.
+	// same as ExEdit::Filter::exfunc->calc_trackbar.
 	BOOL(*calc_trackbar)(ExEdit::ObjectFilterIndex, int32_t, int32_t, int32_t*, char*); // 0x04d040
 
 	// updating the setting dialog.

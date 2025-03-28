@@ -70,15 +70,15 @@ static inline std::wstring format_easing(ExEdit::Object::TrackMode const& mode, 
 }
 
 // multiplies the resolution of logical coordinates for screens with high DPI.
+template<size_t scale_num, size_t scale_den = 1>
 class rescale_dc {
 	HDC dc;
 	int mode;
 	SIZE sz;
 
 public:
-	rescale_dc(HDC dc, size_t scale, std::same_as<int> auto&... coords)
-		requires(sizeof...(coords) % 2 == 0) : rescale_dc{ dc, scale, 1, coords... } {}
-	rescale_dc(HDC dc, size_t scale_num, size_t scale_den, std::same_as<int> auto&... coords)
+	constexpr static size_t scale_num = scale_num, scale_den = scale_den;
+	rescale_dc(HDC dc, std::same_as<int> auto&... coords)
 		requires(sizeof...(coords) % 2 == 0) : dc{ dc }, mode{}, sz {}
 	{
 		constexpr auto num_coords = sizeof...(coords), num_points = num_coords / 2;
@@ -159,11 +159,12 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 	auto const ofi = object_filter_index(*exedit.SettingDialogObjectIndex, filter_index);
 
 	// select frames.
+	size_t const num_sect = settings.graph.plots - 1;
 	int const frame_begin = obj.frame_begin, frame_len = obj.frame_end + 1 - frame_begin;
 	float const len_f = static_cast<float>(frame_len), denom_f = static_cast<float>(denom);
-	std::vector<int> frames{}; frames.reserve(settings.graph.plots); frames.push_back(frame_begin);
-	for (size_t i = 1; i < settings.graph.plots; i++) {
-		int const f = frame_begin + (i * frame_len) / (settings.graph.plots - 1);
+	std::vector<int> frames{}; frames.reserve(num_sect + 1); frames.push_back(frame_begin);
+	for (size_t i = 0; i < num_sect; i++) {
+		int const f = frame_begin + (frame_len * (i + 1) + (num_sect >> 1)) / num_sect;
 		if (frames.back() < f) frames.push_back(f);
 	}
 
@@ -190,13 +191,13 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 {
 	// re-scale the coordinate.
-	rescale_dc rescale{ dc, settings.graph.scale, L, T, R, B };
+	rescale_dc<settings.graph.pixel_scale> rescale{ dc, L, T, R, B };
 
 	int const
-		l = L + settings.graph.scale * margin_lr,
-		r = R - settings.graph.scale * margin_lr,
-		t = T + settings.graph.scale * margin_tb,
-		b = B - settings.graph.scale * margin_tb;
+		l = L + margin_lr * rescale.scale_num / rescale.scale_den,
+		r = R - margin_lr * rescale.scale_num / rescale.scale_den,
+		t = T + margin_tb * rescale.scale_num / rescale.scale_den,
+		b = B - margin_tb * rescale.scale_num / rescale.scale_den;
 	auto const draw_line = [dc](int x1, int y1, int x2, int y2) {
 		POINT pts[] = { {x1, y1}, {x2, y2} };
 		::Polyline(dc, pts, std::size(pts));
@@ -535,8 +536,7 @@ void expt::Settings::load(char const* ini_file)
 		read(int, graph., height,	min_size, max_size);
 
 		read(int, graph., plots,		5, 1025);
-		read(int, graph., scale,		1, 256);
-		read(int, graph., curve_width,	1, 64);
+		read(int, graph., curve_width,	1, 64 * graph.pixel_scale);
 
 		read(int, graph., curve_color,	min_color, max_color);
 		read(int, graph., line_color_1,	min_color, max_color);
