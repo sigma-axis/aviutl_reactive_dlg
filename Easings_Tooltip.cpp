@@ -327,7 +327,7 @@ inline void decltype(tooltip_content)::measure(size_t index, HDC hdc)
 			pos_x_graph = std::max(
 				easing.empty() ? 0 : w_ease + margin_r_easing,
 				values.empty() ? 0 : w_vals + margin_r_easing);
-			width = pos_x_graph + settings.graph.width;
+			width = graph.empty() ? w_ease : pos_x_graph + settings.graph.width;
 		}
 
 		if (!easing.empty() && !values.empty()) {
