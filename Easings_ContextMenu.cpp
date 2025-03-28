@@ -57,29 +57,23 @@ static inline bool scripts_match(ExEdit::Object const& obj1, int filter_index1, 
 	return data2->name[0] == '\0' && data1->type == data2->type;
 }
 
-/// @return `-1` if no matching track found.
-static inline int find_matching_track(ExEdit::Object const& obj, ExEdit::Object const& src_obj, int src_track_index)
+/// @return `-1` if no matching filter found.
+static inline int find_matching_filter(ExEdit::Object const& obj, ExEdit::Object const& src_obj, size_t src_filter_index)
 {
-	if (&obj == &src_obj) return src_track_index;
-
-	// find the filter index that contains the trackbar index.
-	auto [src_filter_index, filter_track_index] = find_filter_from_track(src_obj, src_track_index);
-
-	auto&src_filter = src_obj.filter_param[src_filter_index];
+	auto& filter_id = src_obj.filter_param[src_filter_index].id;
 	size_t filter_index = src_filter_index;
 
 	// for an output filter, match with the output filter of the other object.
 	if (size_t count_filters = obj.countFilters();
-		has_flag_or(exedit.loaded_filter_table[src_filter.id]->flag, ExEdit::Filter::Flag::Output))
+		has_flag_or(exedit.loaded_filter_table[filter_id]->flag, ExEdit::Filter::Flag::Output))
 		filter_index = count_filters - 1;
-	else if (filter_index >= count_filters) return -1;
+	else if (src_filter_index >= count_filters) return -1;
 
 	// check the indentities of the two filters.
-	auto& filter = obj.filter_param[filter_index];
-	if (filter.id != src_filter.id) return -1;
+	if (obj.filter_param[filter_index].id != filter_id) return -1;
 
 	// for filters that handle scripts, those scripts must match.
-	switch (filter.id) {
+	switch (filter_id) {
 		using anm_exdata = ExEdit::Exdata::efAnimationEffect; // shared with camera eff and custom object.
 		using scn_exdata = ExEdit::Exdata::efSceneChange;
 	case filter_id::anim_eff:
@@ -93,8 +87,8 @@ static inline int find_matching_track(ExEdit::Object const& obj, ExEdit::Object 
 		break;
 	}
 
-	// return the matching index of the trackbar.
-	return filter_track_index + filter.track_begin;
+	// all checks passed.
+	return filter_index;
 }
 
 struct target_track {
@@ -195,11 +189,13 @@ struct target_tracks {
 		}
 
 		// eliminate objects that doesn't have a matching trackbar.
+		auto [filter_index, filter_track_index] = find_filter_from_track(obj, track_index);
 		for (auto e = targets.end(), i = targets.begin(); i != e; ) {
 			auto const& obj_i = objects[i->first];
-			if (int const track_index_i = find_matching_track(obj_i, obj, track_index);
-				track_index_i >= 0)
-				(i++)->second.init(obj_i, track_index_i); // initialize the content.
+			if (int const filter_index_i = find_matching_filter(obj_i, obj, filter_index);
+				filter_index_i >= 0)
+				(i++)->second.init(obj_i, // initialize the content.
+					obj_i.filter_param[filter_index_i].track_begin + filter_track_index);
 			else targets.erase(i++); // eliminate the element.
 		}
 
