@@ -197,8 +197,8 @@ BOOL func_init(AviUtl::FilterPlugin* fp)
 	Track::Button::			settings.load(ini_file);
 	Filters::ScriptName::	settings.load(ini_file);
 	Easings::Misc::			settings.load(ini_file);
-	Easings::Tooltip::		settings.load(ini_file);
 	Easings::ContextMenu::	settings.load(ini_file);
+	Easings::Tooltip::		settings.load(ini_file);
 
 	// 競合確認．
 	Track::Button::	settings.check_conflict(fp->name);
@@ -220,20 +220,20 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, AviUtl:
 		Track::Button::			setup(hwnd, true);
 		Filters::ScriptName::	setup(hwnd, true);
 		Easings::Misc::			setup(hwnd, true);
-		Easings::Tooltip::		setup(hwnd, true);
 		Easings::ContextMenu::	setup(hwnd, true);
+		Easings::Tooltip::		setup(hwnd, true);
 		break;
 	case Message::Exit:
 		// at this moment, the setting dialog is already destroyed.
-		TextBox::				setup(hwnd, false);
-		Dropdown::Keyboard::	setup(hwnd, false);
-		Track::Keyboard::		setup(hwnd, false);
-		Track::Mouse::			setup(hwnd, false);
-		Track::Button::			setup(hwnd, false);
-		Filters::ScriptName::	setup(hwnd, false);
-		Easings::Misc::			setup(hwnd, false);
 		Easings::Tooltip::		setup(hwnd, false);
 		Easings::ContextMenu::	setup(hwnd, false);
+		Easings::Misc::			setup(hwnd, false);
+		Filters::ScriptName::	setup(hwnd, false);
+		Track::Button::			setup(hwnd, false);
+		Track::Mouse::			setup(hwnd, false);
+		Track::Keyboard::		setup(hwnd, false);
+		Dropdown::Keyboard::	setup(hwnd, false);
+		TextBox::				setup(hwnd, false);
 
 		// message-only window を削除．必要ないかもしれないけど．
 		fp->hwnd = nullptr; ::DestroyWindow(hwnd);
@@ -275,7 +275,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v2.00-beta1"
+#define PLUGIN_VERSION	"v2.00-beta2"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name " " ver " by " author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
