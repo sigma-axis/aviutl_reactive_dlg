@@ -77,12 +77,8 @@ void update_setting_dialog(int index)
 // 編集データの変更でメイン画面を更新．
 void update_current_frame()
 {
-	constexpr WPARAM cmd_update_main = 1003;
-	// lparam は多目的な用途があるみたいだが詳細不明．0 を送るのが無難っぽい？
-	// (0x0001 << 16) | (trackbar_index) でトラックバー左を操作．
-	// (0x0002 << 16) | (trackbar_index) でトラックバー右を操作，など．
-	// ただし，この2例だとトラックバーの値に修正変更が入ることがある．
-	::SendMessageW(exedit.fp->hwnd, WM_COMMAND, cmd_update_main, 0);
+	constexpr UINT msg_update_main = WM_USER + 1;
+	::PostMessageW(exedit.fp->hwnd, msg_update_main, 0, 0);
 }
 
 // 競合通知メッセージ．
