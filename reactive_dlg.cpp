@@ -11,22 +11,12 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 */
 
 #include <cstdint>
-#include <algorithm>
-#include <cmath>
 #include <cstring>
 #include <string>
-#include <vector>
-#include <span>
-#include <map>
-#include <memory>
-#include <bit>
-#include <concepts>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <CommCtrl.h>
-#pragma comment(lib, "comctl32")
 
 using byte = uint8_t;
 #include <exedit.hpp>
@@ -289,7 +279,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID lpvReserved)
 // 看板．
 ////////////////////////////////
 #define PLUGIN_NAME		"Reactive Dialog"
-#define PLUGIN_VERSION	"v2.00-alpha4"
+#define PLUGIN_VERSION	"v2.00-beta1"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name " " ver " by " author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)

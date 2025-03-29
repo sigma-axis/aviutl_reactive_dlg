@@ -111,22 +111,20 @@ struct name_cache {
 	std::wstring caption = L"";
 	int width = -1;	// width for the text only.
 
-	bool is_valid() const { return width >= 0; }
+	constexpr bool is_valid() const { return width >= 0; }
 	void init(HWND check_button, std::wstring const& text)
 	{
 		caption = text;
 
 		// calculate the size for the text.
-		RECT rc{};
 		HDC dc = ::GetDC(check_button);
 		auto old_font = ::SelectObject(dc, reinterpret_cast<HFONT>(
 			::SendMessageW(check_button, WM_GETFONT, 0, 0)));
-		::DrawTextW(dc, caption.c_str(), caption.size(), &rc, DT_CALCRECT);
+		width = calc_text_width(dc, caption);
 		::SelectObject(dc, old_font);
 		::ReleaseDC(check_button, dc);
-		width = rc.right;
 	}
-	int wd_button() const { return width + extra_button_wd; }
+	constexpr int wd_button() const { return width + extra_button_wd; }
 
 	constexpr static int
 		extra_button_wd = 18,	// width for check button adds this size.
@@ -134,6 +132,12 @@ struct name_cache {
 		gap_between_sep = 5,	// the separator leaves this margin.
 		sep_height = 2;			// height for the separator.
 
+	static int calc_text_width(HDC dc, std::wstring const& text)
+	{
+		RECT rc{};
+		::DrawTextW(dc, text.c_str(), text.size(), &rc, DT_CALCRECT | DT_NOCLIP | DT_SINGLELINE);
+		return rc.right;
+	}
 };
 // stores and manages caches.
 class cache_manager {

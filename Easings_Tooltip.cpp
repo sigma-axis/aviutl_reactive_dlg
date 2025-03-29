@@ -105,7 +105,6 @@ public:
 struct section_graph {
 	std::vector<std::pair<float, float>> points;
 	float min, max, val_left, val_right;
-	static inline HPEN pen = nullptr;
 
 	void clear() { points.clear(); min = max = val_left = val_right = 0; }
 	bool empty() const { return points.empty(); }
@@ -121,7 +120,7 @@ private:
 #ifndef _DEBUG
 constinit
 #endif // !_DEBUG
-static struct {
+static struct tooltip_content {
 	int width, height;
 
 	std::wstring easing, values;
@@ -129,7 +128,7 @@ static struct {
 	int pos_y_values, pos_x_graph;
 
 	inline void measure(size_t index, HDC hdc);
-	inline void draw(HDC dc, RECT rc) const;
+	inline void draw(HDC dc, RECT const& rc) const;
 
 private:
 	constexpr static int
@@ -137,7 +136,7 @@ private:
 		margin_b_easing = 4, margin_b_graph = 4;
 	constexpr static UINT draw_text_options = DT_NOCLIP | DT_HIDEPREFIX;
 
-} tooltip_content{};
+} content{};
 
 // color conversion.
 constexpr auto bgr2rgb(int32_t c) {
@@ -177,7 +176,8 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 {
 	// prepare environment.
 	auto const [filter_index, rel_idx] = find_filter_from_track(obj, index);
-	auto const ofi = object_filter_index(*exedit.SettingDialogObjectIndex, filter_index);
+	auto const ofi = object_filter_index(&obj - *exedit.ObjectArray_ptr, filter_index);
+	char* const arg_name = reinterpret_cast<char*>(1 + rel_idx); // represents the trackbar index.
 
 	// select frames.
 	size_t const num_sect = settings.graph.plots - 1;
@@ -197,7 +197,6 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 
 	// calculate each point.
 	points.clear(); points.reserve(frames.size());
-	char* const arg_name = reinterpret_cast<char*>(1 + rel_idx); // represents the trackbar index.
 	for (auto f : frames) {
 		int val; exedit.calc_trackbar(ofi, f, 0, &val, arg_name);
 
@@ -226,11 +225,11 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 	auto const line_h = [=](int y) { draw_line(L, y, R, y); };
 	auto const line_v = [=](int x) { draw_line(x, T, x, B); };
 
-	auto const func_x = [l, r](float x) -> int {
-		return std::lroundf((1 - x) * l + x * r);
+	auto const func_x = [l, D = r - l](float x) -> int {
+		return l + std::lroundf(D * x);
 	};
-	auto const func_y = [m = min, M = max, t, b](float y) -> int {
-		return std::lroundf(((y - m) * t - (y - M) * b) / (M - m));
+	auto const func_y = [m = min, d = max - min, b, D = t - b](float y) -> int {
+		return b + std::lroundf(D * (y - m) / d);
 	};
 
 	auto const old_pen = ::SelectObject(dc, ::GetStockObject(DC_PEN));
@@ -282,11 +281,12 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 	::SelectObject(dc, old_pen);
 }
 
-inline void decltype(tooltip_content)::measure(size_t index, HDC hdc)
+inline void tooltip_content::measure(size_t index, HDC hdc)
 {
 	auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
 	auto const& mode = obj.track_mode[index];
-	easing_name_spec name_spec{ mode };
+	auto const& track_info = exedit.trackinfo_left[index];
+	easing_name_spec const name_spec{ mode };
 
 	// the name and desc of the easing.
 	if (settings.mode) easing = format_easing(mode, obj.track_param[index], name_spec);
@@ -299,13 +299,13 @@ inline void decltype(tooltip_content)::measure(size_t index, HDC hdc)
 		else {
 			values = formatted_values{ obj, index }.span()
 				.trim_from_sect(settings.values.left, settings.values.right)
-				.to_string(exedit.trackinfo_left[index].precision(), true, true, settings.values.zigzag);
+				.to_string(track_info.precision(), true, true, settings.values.zigzag);
 		}
 	}
 
 	// easing graph.
 	if (settings.graph.enabled)
-		graph.plot(obj, index, exedit.trackinfo_left[index].denominator());
+		graph.plot(obj, index, track_info.denominator());
 
 	// measure those text.
 	RECT rc1{}, rc2{};
@@ -322,7 +322,9 @@ inline void decltype(tooltip_content)::measure(size_t index, HDC hdc)
 		w_vals = rc2.right - rc2.left, h_vals = rc2.bottom - rc2.top;
 	if (w_ease < w_vals) {
 		if (!easing.empty() && !graph.empty()) {
-			pos_x_graph = std::max(w_ease + margin_r_easing, w_vals - settings.graph.width);
+			pos_x_graph = std::min(
+				std::max(w_ease + margin_r_easing, w_vals - settings.graph.width),
+				w_ease + (settings.graph.width >> 1)); // gap at most half width of the graph.
 			width = std::max(w_vals, pos_x_graph + settings.graph.width);
 		}
 		else {
@@ -368,7 +370,7 @@ inline void decltype(tooltip_content)::measure(size_t index, HDC hdc)
 	}
 }
 
-inline void decltype(tooltip_content)::draw(HDC dc, RECT rc) const
+inline void tooltip_content::draw(HDC dc, RECT const& rc) const
 {
 	// change the text color if specified.
 	if (settings.text_color >= 0)
@@ -441,8 +443,8 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				RECT rc;
 				::GetWindowRect(tooltip, &rc);
 				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
-				rc.right = rc.left + tooltip_content.width + 2; // add slight extra space on the right and bottom.
-				rc.bottom = rc.top + tooltip_content.height + 1;
+				rc.right = rc.left + content.width + 2; // add slight extra space on the right and bottom.
+				rc.bottom = rc.top + content.height + 1;
 				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
 
 				// adjust the position not to clip edges of screens.
@@ -459,10 +461,10 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
 				if (::IsWindowVisible(tooltip) == FALSE)
 					// prepare the tooltip content.
-					tooltip_content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
+					content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
 				else if (dhdr->nmcd.dwDrawStage != CDDS_PREPAINT)
 					// draw the content.
-					tooltip_content.draw(dhdr->nmcd.hdc, dhdr->nmcd.rc);
+					content.draw(dhdr->nmcd.hdc, dhdr->nmcd.rc);
 				else return CDRF_NOTIFYPOSTPAINT;
 				break;
 			}
@@ -520,6 +522,7 @@ bool expt::setup(HWND hwnd, bool initializing)
 		else {
 			::DestroyWindow(tooltip);
 			tooltip = nullptr;
+			graph_pen.delete_object();
 		}
 		return true;
 	}
