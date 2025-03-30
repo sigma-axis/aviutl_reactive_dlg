@@ -180,7 +180,7 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 	char* const arg_name = reinterpret_cast<char*>(1 + rel_idx); // represents the trackbar index.
 
 	// select frames.
-	size_t const num_sect = settings.graph.plots - 1;
+	size_t const num_sect = settings.graph.polls - 1;
 	int const frame_begin = obj.frame_begin, frame_len = obj.frame_end + 1 - frame_begin;
 	float const len_f = static_cast<float>(frame_len), denom_f = static_cast<float>(denom);
 	std::vector<int> frames{}; frames.reserve(num_sect + 1); frames.push_back(frame_begin);
@@ -576,7 +576,7 @@ void expt::Settings::load(char const* ini_file)
 		read(int, graph., width,	min_size, max_size);
 		read(int, graph., height,	min_size, max_size);
 
-		read(int, graph., plots,		5, 1025);
+		read(int, graph., polls,		5, 1025);
 		read(int, graph., curve_width,	1, 64 * graph.pixel_scale);
 
 		read(int, graph., curve_color,	min_color, max_color);

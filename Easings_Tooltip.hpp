@@ -39,7 +39,7 @@ namespace reactive_dlg::Easings::Tooltip
 		struct {
 			bool enabled;
 			int32_t width, height;
-			uint32_t plots, curve_width;
+			uint32_t polls, curve_width;
 			uint32_t curve_color, cursor_color,
 				line_color_1, line_color_2, line_color_3;
 
