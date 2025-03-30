@@ -38,8 +38,8 @@ namespace reactive_dlg::Easings::Tooltip
 
 		struct {
 			bool enabled;
-			int32_t width, height;
-			uint32_t polls, curve_width;
+			int16_t width, height;
+			uint16_t polls, curve_width;
 			uint32_t curve_color, cursor_color,
 				line_color_1, line_color_2, line_color_3;
 
@@ -52,7 +52,7 @@ namespace reactive_dlg::Easings::Tooltip
 
 		void load(char const* ini_file);
 		bool is_enabled() const {
-			return mode || values.is_enabled();
+			return mode || values.is_enabled() || graph.enabled;
 		}
 	} settings;
 

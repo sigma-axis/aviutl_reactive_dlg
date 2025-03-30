@@ -313,8 +313,10 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 			name_spec.spec.twopoints)
 			values = L"";
 		else {
-			values = formatted_values{ obj, index }.span()
-				.trim_from_sect(settings.values.left, settings.values.right)
+			auto const vals = formatted_values{ obj, index };
+			values = vals.span().trim_from_sect(
+				settings.values.left < 0 ? vals.size() : settings.values.left,
+				settings.values.right < 0 ? vals.size() : settings.values.right)
 				.to_string(track_info.precision(), true, true, settings.values.zigzag);
 		}
 	}
