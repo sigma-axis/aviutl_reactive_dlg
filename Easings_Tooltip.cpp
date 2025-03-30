@@ -213,6 +213,7 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 	// re-scale the coordinate.
 	rescale_dc<settings.graph.pixel_scale> rescale{ dc, L, T, R, B };
 
+	// prepare coordinates.
 	int const
 		l = L + margin_lr * rescale.scale_num / rescale.scale_den,
 		r = R - margin_lr * rescale.scale_num / rescale.scale_den,
@@ -232,9 +233,8 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 		return b + std::lroundf(D * (y - m) / d);
 	};
 
-	auto const old_pen = ::SelectObject(dc, ::GetStockObject(DC_PEN));
-
 	// draw grid lines.
+	auto const old_pen = ::SelectObject(dc, ::GetStockObject(DC_PEN));
 	::SetDCPenColor(dc, bgr2rgb(settings.graph.line_color_3));
 	if (min < max) {
 		line_h(func_y(0.75f * val_left + 0.25f * val_right));

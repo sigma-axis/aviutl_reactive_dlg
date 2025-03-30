@@ -25,7 +25,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 namespace reactive_dlg::Easings::Misc
 {
 	inline constinit struct Settings {
-		bool linked_track_invert_shift = true,
+		bool linked_track_invert_shift = false,
 			wheel_click = true;
 
 		void load(char const* ini_file);
