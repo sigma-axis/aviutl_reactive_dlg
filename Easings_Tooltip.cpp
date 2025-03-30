@@ -104,7 +104,7 @@ public:
 
 struct section_graph {
 	std::vector<std::pair<float, float>> points;
-	float min, max, val_left, val_right;
+	float min, max, val_left, val_right, curr;
 
 	void clear() { points.clear(); min = max = val_left = val_right = 0; }
 	bool empty() const { return points.empty(); }
@@ -143,7 +143,7 @@ constexpr auto bgr2rgb(int32_t c) {
 	return (std::rotl<uint32_t>(c, 16) & 0x00ff00ff) | (c & 0x0000ff00);
 }
 
-static inline struct graph_pen {
+static inline constinit struct graph_pen {
 	constexpr operator bool() const { return pen != nullptr; }
 	operator HPEN() {
 		if (pen == nullptr) {
@@ -189,6 +189,12 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 		if (frames.back() < f) frames.push_back(f);
 	}
 
+	// store the current frame position.
+	if (int const curr_rel = *exedit.edit_frame_cursor - frame_begin;
+		0 <= curr_rel && curr_rel <= frame_len)
+		curr = curr_rel / len_f;
+	else curr = -1;
+
 	// store the left and right values.
 	val_left = obj.track_value_left[index] / denom_f;
 	val_right = obj.track_value_right[index] / denom_f;
@@ -215,26 +221,27 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 
 	// prepare coordinates.
 	int const
-		l = L + margin_lr * rescale.scale_num / rescale.scale_den,
-		r = R - margin_lr * rescale.scale_num / rescale.scale_den,
-		t = T + margin_tb * rescale.scale_num / rescale.scale_den,
-		b = B - margin_tb * rescale.scale_num / rescale.scale_den;
-	auto const draw_line = [dc](int x1, int y1, int x2, int y2) {
-		POINT pts[] = { {x1, y1}, {x2, y2} };
+		X0 = L + margin_lr * rescale.scale_num / rescale.scale_den,
+		X1 = R - margin_lr * rescale.scale_num / rescale.scale_den,
+		YM = T + margin_tb * rescale.scale_num / rescale.scale_den,
+		Ym = B - margin_tb * rescale.scale_num / rescale.scale_den;
+	auto const draw_line = [dc](int X1, int Y1, int X2, int Y2) {
+		POINT pts[] = { {X1, Y1}, {X2, Y2} };
 		::Polyline(dc, pts, std::size(pts));
 	};
-	auto const line_h = [=](int y) { draw_line(L, y, R, y); };
-	auto const line_v = [=](int x) { draw_line(x, T, x, B); };
+	auto const line_h = [=](int Y) { draw_line(L, Y, R, Y); };
+	auto const line_v = [=](int X) { draw_line(X, T, X, B); };
 
-	auto const func_x = [l, D = r - l](float x) -> int {
-		return l + std::lroundf(D * x);
+	auto const func_x = [X0, D = X1 - X0](float x) -> int {
+		return X0 + std::lroundf(D * x);
 	};
-	auto const func_y = [m = min, d = max - min, b, D = t - b](float y) -> int {
-		return b + std::lroundf(D * (y - m) / d);
+	auto const func_y = [m = min, d = max - min, Ym, D = YM - Ym](float y) -> int {
+		return Ym + std::lroundf(D * (y - m) / d);
 	};
 
 	// draw grid lines.
-	auto const old_pen = ::SelectObject(dc, ::GetStockObject(DC_PEN));
+	auto const dc_pen = ::GetStockObject(DC_PEN);
+	auto const old_pen = ::SelectObject(dc, dc_pen);
 	::SetDCPenColor(dc, bgr2rgb(settings.graph.line_color_3));
 	if (min < max) {
 		line_h(func_y(0.75f * val_left + 0.25f * val_right));
@@ -242,13 +249,13 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 		line_h(func_y(0.25f * val_left + 0.75f * val_right));
 	}
 	else {
-		line_h((3 * t + b + 2) >> 2);
-		line_h((t + b + 1) >> 1);
-		line_h((t + 3 * b + 2) >> 2);
+		line_h((3 * YM + Ym + 2) >> 2);
+		line_h((YM + Ym + 1) >> 1);
+		line_h((YM + 3 * Ym + 2) >> 2);
 	}
-	line_v((3 * l + r + 2) >> 2);
-	line_v((l + r + 1) >> 1);
-	line_v((l + 3 * r + 2) >> 2);
+	line_v((3 * X0 + X1 + 2) >> 2);
+	line_v((X0 + X1 + 1) >> 1);
+	line_v((X0 + 3 * X1 + 2) >> 2);
 
 	::SetDCPenColor(dc, bgr2rgb(settings.graph.line_color_2));
 	if (min < max) {
@@ -256,13 +263,13 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 		line_h(func_y(val_right));
 	}
 	else {
-		line_h(t);
-		line_h(b);
+		line_h(YM);
+		line_h(Ym);
 	}
 
 	::SetDCPenColor(dc, bgr2rgb(settings.graph.line_color_1));
-	line_v(l);
-	line_v(r);
+	line_v(X0);
+	line_v(X1);
 
 	// draw the easing curve.
 	::SelectObject(dc, graph_pen);
@@ -273,8 +280,17 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 		::Polyline(dc, pts.data(), std::size(pts));
 	}
 	else {
-		auto const Y = (t + b + 1) >> 1;
-		draw_line(l, Y, r, Y);
+		auto const Y = (YM + Ym + 1) >> 1;
+		draw_line(X0, Y, X1, Y);
+	}
+
+	// draw the current frame.
+	if (curr >= 0) {
+		::SelectObject(dc, dc_pen);
+		::SetDCPenColor(dc, bgr2rgb(settings.graph.cursor_color));
+		auto const mode = ::SetROP2(dc, R2_XORPEN);
+		line_v(func_x(curr));
+		::SetROP2(dc, mode);
 	}
 
 	// set the pen back.
@@ -564,6 +580,7 @@ void expt::Settings::load(char const* ini_file)
 		read(int, graph., curve_width,	1, 64 * graph.pixel_scale);
 
 		read(int, graph., curve_color,	min_color, max_color);
+		read(int, graph., cursor_color,	min_color, max_color);
 		read(int, graph., line_color_1,	min_color, max_color);
 		read(int, graph., line_color_2,	min_color, max_color);
 		read(int, graph., line_color_3,	min_color, max_color);

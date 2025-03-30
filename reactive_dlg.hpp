@@ -79,6 +79,7 @@ inline constinit struct ExEdit092 {
 	int32_t*	SettingDialogObjectIndex;	// 0x177a10
 	int32_t*	SelectingObjectNum_ptr;		// 0x167d88
 	int32_t*	SelectingObjectIndex;		// 0x179230
+	int32_t*	edit_frame_cursor;			// 0x1a5304
 
 	HWND*		hwnd_setting_dlg;			// 0x1539c8
 	//int32_t*	is_playing;					// 0x1a52ec; 0: editing, 1: playing.
@@ -135,6 +136,7 @@ private:
 		pick_addr(SettingDialogObjectIndex,	0x177a10);
 		pick_addr(SelectingObjectNum_ptr,	0x167d88);
 		pick_addr(SelectingObjectIndex,		0x179230);
+		pick_addr(edit_frame_cursor,		0x1a5304);
 
 		pick_addr(hwnd_setting_dlg,			0x1539c8);
 		//pick_addr(is_playing,				0x1a52ec);
