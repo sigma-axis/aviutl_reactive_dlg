@@ -141,7 +141,8 @@ struct target_tracks {
 	std::map<size_t, target_track> targets;
 
 	// common properties of the target trackbar.
-	int track_denom, track_prec, track_min, track_max;
+	int track_denom, track_prec, track_min, track_max,
+		track_prec_digits;
 
 	std::pair<ExEdit::Object const&, target_track const&> selected_track() const {
 		auto const* const objects = *exedit.ObjectArray_ptr;
@@ -168,6 +169,7 @@ struct target_tracks {
 		, track_prec{ 1 }
 		, track_min{ 0 }
 		, track_max{ 0 }
+		, track_prec_digits{ 0 }
 	{
 		auto const* const objects = *exedit.ObjectArray_ptr;
 		auto const& obj = objects[selected_object_index];
@@ -211,6 +213,7 @@ struct target_tracks {
 		track_prec = trackinfo.precision();
 		track_min = trackinfo.val_int_min;
 		track_max = trackinfo.val_int_max;
+		track_prec_digits = static_cast<int>(0.5f + std::log10f(static_cast<float>(track_prec)));
 	}
 	target_tracks& operator=(target_tracks const&) = delete;
 	target_tracks(target_tracks const&) = delete;
@@ -558,13 +561,12 @@ struct paste_uniform_r : paste_base {
 
 struct write_l2r : modify_base {
 	double value; // left value.
-	bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
+	bool append(HMENU menu, uint32_t id, double value_l, double value_r)
 	{
+		value = value_l;
 		if (info.values_count.min == 1 || !info.values_count.uniform()) return false;
-
-		value = info_l.value();
 		append_menu(menu, id, false, L"上書き: 左 \u25b6 右 (%.*f)", // Black Right-Pointing Triangle
-			static_cast<int>(0.5f + std::log10f(static_cast<float>(info.track_prec))), value);
+			info.track_prec_digits, value);
 		return true;
 	}
 
@@ -577,13 +579,12 @@ struct write_l2r : modify_base {
 
 struct write_r2l : modify_base {
 	double value; // right value.
-	bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
+	bool append(HMENU menu, uint32_t id, double value_l, double value_r)
 	{
+		value = value_r;
 		if (info.values_count.min == 1 || !info.values_count.uniform()) return false;
-
-		value = info_r.value();
 		append_menu(menu, id, false, L"上書き: 左 \u25c0 右 (%.*f)", // Black Left-Pointing Triangle
-			static_cast<int>(0.5f + std::log10f(static_cast<float>(info.track_prec))), value);
+			info.track_prec_digits, value);
 		return true;
 	}
 
@@ -596,14 +597,12 @@ struct write_r2l : modify_base {
 
 struct swap_left_right : modify_base {
 	double value_l, value_r; // original values on the both sides.
-	bool append(HMENU menu, uint32_t id, TrackInfo const& info_l, TrackInfo const& info_r)
+	bool append(HMENU menu, uint32_t id, double value_l, double value_r)
 	{
+		this->value_l = value_l; this->value_r = value_r;
 		if (info.values_count.min == 1 || !info.values_count.uniform()) return false;
-
-		value_l = info_l.value(); value_r = info_r.value();
-		int prec_len = static_cast<int>(0.5f + std::log10f(static_cast<float>(info.track_prec)));
 		append_menu(menu, id, false, L"入替え: 左 \u21c4 右 (%.*f \u21c4 %.*f)", // Rightwards Arrow Over Leftwards Arrow
-			prec_len, value_l, prec_len, value_r);
+			info.track_prec_digits, value_l, info.track_prec_digits, value_r);
 		return true;
 	}
 
@@ -617,14 +616,12 @@ struct swap_left_right : modify_base {
 struct write_left_flat : modify_base {
 	constexpr static auto menu_title = L"左の区間を一律に";
 	double value; // left value of the selected section.
-	bool append(HMENU menu, uint32_t id, TrackInfo const& info_l)
+	bool append(HMENU menu, uint32_t id, double value_l, double value_r)
 	{
+		value = value_l;
 		if (info.values_count.min == 1 || !info.values_count.uniform()) return false;
-		if (info.values_count.min >= 3 && info.selected_section > 0) {
-			value = info_l.value();
-			append_menu(menu, id, false, L"%s (%.*f)", menu_title,
-				static_cast<int>(0.5f + std::log10f(static_cast<float>(info.track_prec))), value);
-		}
+		if (info.values_count.min >= 3 && info.selected_section > 0)
+			append_menu(menu, id, false, L"%s (%.*f)", menu_title, info.track_prec_digits, value);
 		else append_menu(menu, id, true, menu_title);
 
 		return true;
@@ -641,14 +638,12 @@ struct write_left_flat : modify_base {
 struct write_right_flat : modify_base {
 	constexpr static auto menu_title = L"右の区間を一律に";
 	double value; // right value of the selected section.
-	bool append(HMENU menu, uint32_t id, TrackInfo const& info_r)
+	bool append(HMENU menu, uint32_t id, double value_l, double value_r)
 	{
+		value = value_r;
 		if (info.values_count.min == 1 || !info.values_count.uniform()) return false;
-		if (info.values_count.min >= 3 && info.selected_section < info.values_count.min - 2) {
-			value = info_r.value();
-			append_menu(menu, id, false, L"%s (%.*f)", menu_title,
-				static_cast<int>(0.5f + std::log10f(static_cast<float>(info.track_prec))), value);
-		}
+		if (info.values_count.min >= 3 && info.selected_section < info.values_count.min - 2)
+			append_menu(menu, id, false, L"%s (%.*f)", menu_title, info.track_prec_digits, value);
 		else append_menu(menu, id, true, menu_title);
 
 		return true;
@@ -818,8 +813,6 @@ static inline bool on_context_menu(HWND hwnd, size_t idx)
 		return ::RemoveMenu(menu, ::GetMenuItemCount(menu) - 1, MF_BYPOSITION);
 	};
 
-	//auto& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
-	//track_info info{ exedit.trackinfo_left[idx], obj.track_mode[idx] };
 	target_tracks info{ idx };
 
 	// prepare the context menu.
@@ -907,13 +900,16 @@ static inline bool on_context_menu(HWND hwnd, size_t idx)
 	write_right_flat	write_right_flat{ info };
 
 	if (info.values_count.min > 1 && info.values_count.uniform()) {
+		double value_l = exedit.trackinfo_left[idx].value(),
+			value_r = exedit.trackinfo_right[idx].value();
+
 		add_sep(menu);
 
-		write_l2r		.append(menu, menu_id::write_l2r, exedit.trackinfo_left[idx], exedit.trackinfo_right[idx]);
-		write_r2l		.append(menu, menu_id::write_r2l, exedit.trackinfo_left[idx], exedit.trackinfo_right[idx]);
-		swap_left_right	.append(menu, menu_id::swap_left_right, exedit.trackinfo_left[idx], exedit.trackinfo_right[idx]);
-		write_left_flat	.append(menu, menu_id::write_left_flat, exedit.trackinfo_left[idx]);
-		write_right_flat.append(menu, menu_id::write_right_flat, exedit.trackinfo_right[idx]);
+		write_l2r		.append(menu, menu_id::write_l2r,			value_l, value_r);
+		write_r2l		.append(menu, menu_id::write_r2l,			value_l, value_r);
+		swap_left_right	.append(menu, menu_id::swap_left_right,		value_l, value_r);
+		write_left_flat	.append(menu, menu_id::write_left_flat,		value_l, value_r);
+		write_right_flat.append(menu, menu_id::write_right_flat,	value_l, value_r);
 	}
 
 	// commands for translation.

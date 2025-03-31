@@ -94,8 +94,8 @@ expt::easing_name_spec::easing_name_spec(ExEdit::Object::TrackMode const& mode)
 	size_t const basic_idx = mode.num & 0x0f;
 	bool const is_scr = basic_idx == mode.isScript;
 
-	// name of the easing.
 #pragma warning(suppress : 6385)
+	// name of the easing.
 	name = is_scr ?
 		script_names(mode.script_idx).name :
 		basic_track_mode_names[basic_idx];
@@ -112,15 +112,18 @@ expt::easing_name_spec::easing_name_spec(ExEdit::Object::TrackMode const& mode)
 
 expt::formatted_values::formatted_values(ExEdit::Object const& obj, size_t idx_track) : vals{}
 {
-	auto [pos, chain] = collect_pos_chain(obj); section = pos;
-	auto values = collect_int_values(chain, idx_track);
+	auto const [pos, chain] = collect_pos_chain(obj); section = pos;
+	auto const values = collect_int_values(chain, idx_track);
 
 	if (values.size() == 1) section = -1; // 移動無し
 	else if (values.size() == 2) section = 0; // 中間点なし or 中間点無視
 
+	auto const [filter_idx, rel_idx] = find_filter_from_track(obj, idx_track);
+	auto const* scale = exedit.loaded_filter_table[obj.filter_param[filter_idx].id]->track_scale;
+	double const denom = scale == nullptr ? 1 : std::max(scale[rel_idx], 1);
+
 	vals.reserve(values.size());
-	double const d = exedit.trackinfo_left[idx_track].denominator();
-	for (int value : values) vals.push_back(value / d);
+	for (int value : values) vals.push_back(value / denom);
 }
 
 expt::formatted_values::formatted_values(std::wstring src) : vals{}, section{}
@@ -139,7 +142,7 @@ expt::formatted_values::formatted_values(std::wstring src) : vals{}, section{}
 	};
 
 	// identify the bracket positions.
-	auto pos_bra_l = find_unique(src, L'['), pos_bra_r = find_unique(src, L']');
+	auto const pos_bra_l = find_unique(src, L'['), pos_bra_r = find_unique(src, L']');
 	int idx_bra_l = -1, idx_bra_r = -1;
 
 	// replace all non-numeric characters with white spaces.
@@ -252,10 +255,10 @@ std::pair<int, std::vector<int>> expt::collect_pos_chain(ExEdit::Object const& o
 
 std::vector<int> expt::collect_int_values(std::vector<int> const& chain, size_t idx_track)
 {
-	auto* const objects = *exedit.ObjectArray_ptr;
-	auto& leading = objects[chain.front()];
-	auto mode = leading.track_mode[idx_track];
-	auto spec = easing_name_spec{ leading.track_mode[idx_track] }.spec;
+	auto const* const objects = *exedit.ObjectArray_ptr;
+	auto const& leading = objects[chain.front()];
+	auto const mode = leading.track_mode[idx_track];
+	auto const spec = easing_name_spec{ leading.track_mode[idx_track] }.spec;
 
 	std::vector<int> values{ leading.track_value_left[idx_track] };
 	if ((mode.num & 0x0f) == 0); // sole value.
@@ -273,8 +276,8 @@ void expt::apply_int_values(std::vector<int> const& chain, std::vector<int> cons
 {
 	auto* const objects = *exedit.ObjectArray_ptr;
 	auto& leading = objects[chain.front()];
-	auto mode = leading.track_mode[idx_track];
-	auto spec = easing_name_spec{ leading.track_mode[idx_track] }.spec;
+	auto const mode = leading.track_mode[idx_track];
+	auto const spec = easing_name_spec{ leading.track_mode[idx_track] }.spec;
 
 	int val_l = values.front();
 	if ((mode.num & 0x0f) == 0) {
@@ -286,7 +289,7 @@ void expt::apply_int_values(std::vector<int> const& chain, std::vector<int> cons
 	}
 	else if (chain.size() == 1 || spec.twopoints) {
 		// handle only two points.
-		int val_r = values.back();
+		int const val_r = values.back();
 		for (int i : chain) {
 			auto& o = objects[i];
 			o.track_value_left[idx_track] = val_l;
@@ -296,7 +299,7 @@ void expt::apply_int_values(std::vector<int> const& chain, std::vector<int> cons
 	else {
 		// common cases.
 		for (int pos = 0; pos < static_cast<int>(chain.size()); pos++) {
-			int val_r = values[pos + 1];
+			int const val_r = values[pos + 1];
 			auto& o = objects[chain[pos]];
 			o.track_value_left[idx_track] = val_l;
 			o.track_value_right[idx_track] = val_r;
@@ -325,7 +328,7 @@ std::pair<size_t, size_t> expt::find_filter_from_track(ExEdit::Object const& obj
 {
 	size_t filter_index = 0;
 	for (; filter_index < std::size(obj.filter_param) - 1; filter_index++) {
-		auto filter = obj.filter_param[filter_index + 1];
+		auto const filter = obj.filter_param[filter_index + 1];
 		if (!filter.is_valid() ||
 			track_index < static_cast<size_t>(filter.track_begin)) break;
 	}

@@ -74,7 +74,7 @@ inline constinit struct ExEdit092 {
 	bool init(AviUtl::FilterPlugin* this_fp);
 
 	//int32_t*	ObjectAllocNum;				// 0x1e0fa0
-	ExEdit::Object**	ObjectArray_ptr;	// 0x1e0fa4
+	ExEdit::Object**	ObjectArray_ptr;	// 0x1e0fa4; Object(*)[].
 	int32_t*	NextObjectIdxArray;			// 0x1592d8
 	int32_t*	SettingDialogObjectIndex;	// 0x177a10
 	int32_t*	SelectingObjectNum_ptr;		// 0x167d88
@@ -111,7 +111,7 @@ inline constinit struct ExEdit092 {
 	// index: index of the script; zero1, zero2: zero, unknown otherwise.
 	void(*load_easing_spec)(int32_t index, int32_t zero1, int32_t zero2); // 0x087940
 
-	ExEdit::Filter**	loaded_filter_table;// 0x187c98
+	ExEdit::Filter**	loaded_filter_table;// 0x187c98; Filter*[].
 	//int32_t*	loaded_filter_count;		// 0x146248
 
 	// communicating with the undo buffer.

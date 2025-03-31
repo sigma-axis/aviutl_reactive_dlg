@@ -13,6 +13,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <cstdint>
 #include <cmath>
 #include <string>
+#include <bit>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -86,8 +87,7 @@ public:
 		::LPtoDP(dc, reinterpret_cast<POINT*>(pts), num_points);
 
 		mode = ::SetMapMode(dc, MM_ANISOTROPIC);
-		::GetWindowExtEx(dc, &sz);
-		::SetWindowExtEx(dc, sz.cx * scale_num / scale_den, sz.cy * scale_num / scale_den, nullptr);
+		::ScaleWindowExtEx(dc, scale_num, scale_den, scale_num, scale_den, &sz);
 
 		::DPtoLP(dc, reinterpret_cast<POINT*>(pts), num_points);
 		[&]<size_t... I>(std::index_sequence<I...>) {
@@ -104,16 +104,16 @@ public:
 
 struct section_graph {
 	std::vector<std::pair<float, float>> points;
-	float min, max, val_left, val_right, curr;
+	float val_left, val_right, curr;
 
-	void clear() { points.clear(); min = max = val_left = val_right = 0; }
+	void clear() { points.clear(); val_left = val_right = 0; curr = -1; }
 	bool empty() const { return points.empty(); }
 
 	inline void plot(ExEdit::Object const& obj, size_t index, int denom);
 	inline void draw(HDC dc, int L, int T, int R, int B) const;
 
 private:
-	constexpr static int margin_lr = 3, margin_tb = 4;
+	constexpr static int margin_lr = 3, margin_tb = 3;
 };
 
 // storage of the tooltip content.
@@ -129,6 +129,8 @@ static struct tooltip_content {
 
 	inline void measure(size_t index, HDC hdc);
 	inline void draw(HDC dc, RECT const& rc) const;
+	constexpr bool is_valid() const { return width > 0 && height > 0; }
+	void invalidate() { width = height = 0; }
 
 private:
 	constexpr static int
@@ -176,13 +178,16 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 {
 	// prepare environment.
 	auto const [filter_index, rel_idx] = find_filter_from_track(obj, index);
-	auto const ofi = object_filter_index(&obj - *exedit.ObjectArray_ptr, filter_index);
+	size_t const obj_index = &obj - *exedit.ObjectArray_ptr;
+	auto const ofi = object_filter_index(obj_index, filter_index);
 	char* const arg_name = reinterpret_cast<char*>(1 + rel_idx); // represents the trackbar index.
 
 	// select frames.
 	size_t const num_sect = settings.graph.polls - 1;
-	int const frame_begin = obj.frame_begin, frame_len = obj.frame_end + 1 - frame_begin;
-	float const len_f = static_cast<float>(frame_len), denom_f = static_cast<float>(denom);
+	int const frame_begin = obj.frame_begin,
+		frame_len = obj.frame_end - frame_begin
+		+ (obj.index_midpt_leader >= 0 && exedit.NextObjectIdxArray[obj_index] >= 0 ? 1 : 0);
+	float const len_f = static_cast<float>(std::max(frame_len, 1));
 	std::vector<int> frames{}; frames.reserve(num_sect + 1); frames.push_back(frame_begin);
 	for (size_t i = 0; i < num_sect; i++) {
 		int const f = frame_begin + (frame_len * (i + 1) + (num_sect >> 1)) / num_sect;
@@ -195,11 +200,12 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 		curr = curr_rel / len_f;
 	else curr = -1;
 
-	// store the left and right values.
-	val_left = obj.track_value_left[index] / denom_f;
-	val_right = obj.track_value_right[index] / denom_f;
-	if (val_left < val_right) min = val_left, max = val_right;
-	else min = val_right, max = val_left;
+	// retrieve the left and right values.
+	int const val_l = obj.track_value_left[index],
+		val_r = obj.track_value_right[index];
+	int min, max;
+	if (val_l < val_r) min = val_l, max = val_r;
+	else min = val_r, max = val_l;
 
 	// calculate each point.
 	points.clear(); points.reserve(frames.size());
@@ -207,24 +213,36 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 		int val; exedit.calc_trackbar(ofi, f, 0, &val, arg_name);
 
 		// store the point and the statistics.
-		float const val_f = val / denom_f;
-		points.emplace_back((f - frame_begin) / len_f, val_f);
-		if (val_f < min) min = val_f;
-		else if (max < val_f) max = val_f;
+		points.emplace_back((f - frame_begin) / len_f, std::bit_cast<float>(val));
+		if (val < min) min = val;
+		else if (max < val) max = val;
 	}
+
+	// handling the single-frame interval.
+	if (points.size() < 2)
+		points.emplace_back(1.0f, points.back().second);
+
+	// normalize the calculated values within the [0, 1] range.
+	if (min == max) {
+		min--; max++;
+
+		// discard intermediate points.
+		points[1] = points.back();
+		points.resize(2);
+	}
+	float const range = static_cast<float>(max - min);
+	val_left = (val_l - min) / range; val_right = (val_r - min) / range;
+	for (auto& [_, y] : points)
+		y = (std::bit_cast<int>(y) - min) / range;
 }
 
 inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 {
 	// re-scale the coordinate.
-	rescale_dc<settings.graph.pixel_scale> rescale{ dc, L, T, R, B };
+	int X0 = L + margin_lr, X1 = R - margin_lr, Y1 = T + margin_tb, Y0 = B - margin_tb;
+	rescale_dc<settings.graph.pixel_scale> rescale{ dc, L, T, R, B, X0, Y1, X1, Y0 };
 
-	// prepare coordinates.
-	int const
-		X0 = L + margin_lr * rescale.scale_num / rescale.scale_den,
-		X1 = R - margin_lr * rescale.scale_num / rescale.scale_den,
-		YM = T + margin_tb * rescale.scale_num / rescale.scale_den,
-		Ym = B - margin_tb * rescale.scale_num / rescale.scale_den;
+	// prepare lambdas.
 	auto const draw_line = [dc](int X1, int Y1, int X2, int Y2) {
 		POINT pts[] = { {X1, Y1}, {X2, Y2} };
 		::Polyline(dc, pts, std::size(pts));
@@ -235,37 +253,25 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 	auto const func_x = [X0, D = X1 - X0](float x) -> int {
 		return X0 + std::lroundf(D * x);
 	};
-	auto const func_y = [m = min, d = max - min, Ym, D = YM - Ym](float y) -> int {
-		return Ym + std::lroundf(D * (y - m) / d);
+	auto const func_y = [Y0, D = Y1 - Y0](float y) -> int {
+		// note that D is negative.
+		return Y0 + std::lroundf(D * y);
 	};
 
 	// draw grid lines.
 	auto const dc_pen = ::GetStockObject(DC_PEN);
 	auto const old_pen = ::SelectObject(dc, dc_pen);
 	::SetDCPenColor(dc, bgr2rgb(settings.graph.line_color_3));
-	if (min < max) {
-		line_h(func_y(0.75f * val_left + 0.25f * val_right));
-		line_h(func_y(0.50f * (val_left + val_right)));
-		line_h(func_y(0.25f * val_left + 0.75f * val_right));
-	}
-	else {
-		line_h((3 * YM + Ym + 2) >> 2);
-		line_h((YM + Ym + 1) >> 1);
-		line_h((YM + 3 * Ym + 2) >> 2);
-	}
+	line_h(func_y(0.75f * val_left + 0.25f * val_right));
+	line_h(func_y(0.50f * (val_left + val_right)));
+	line_h(func_y(0.25f * val_left + 0.75f * val_right));
 	line_v((3 * X0 + X1 + 2) >> 2);
 	line_v((X0 + X1 + 1) >> 1);
 	line_v((X0 + 3 * X1 + 2) >> 2);
 
 	::SetDCPenColor(dc, bgr2rgb(settings.graph.line_color_2));
-	if (min < max) {
-		line_h(func_y(val_left));
-		line_h(func_y(val_right));
-	}
-	else {
-		line_h(YM);
-		line_h(Ym);
-	}
+	line_h(func_y(val_left));
+	line_h(func_y(val_right));
 
 	::SetDCPenColor(dc, bgr2rgb(settings.graph.line_color_1));
 	line_v(X0);
@@ -273,16 +279,10 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 
 	// draw the easing curve.
 	::SelectObject(dc, graph_pen);
-	if (min < max) {
-		std::vector<POINT> pts{}; pts.reserve(points.size());
-		for (auto const& [x, y] : points)
-			pts.emplace_back(func_x(x), func_y(y));
-		::Polyline(dc, pts.data(), std::size(pts));
-	}
-	else {
-		auto const Y = (YM + Ym + 1) >> 1;
-		draw_line(X0, Y, X1, Y);
-	}
+	std::vector<POINT> pts{}; pts.reserve(points.size());
+	for (auto const& [x, y] : points)
+		pts.emplace_back(func_x(x), func_y(y));
+	::Polyline(dc, pts.data(), std::size(pts));
 
 	// draw the current frame.
 	if (curr >= 0) {
@@ -299,6 +299,8 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 
 inline void tooltip_content::measure(size_t index, HDC hdc)
 {
+	if (is_valid()) return;
+
 	auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
 	auto const& mode = obj.track_mode[index];
 	auto const& track_info = exedit.trackinfo_left[index];
@@ -376,20 +378,23 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 		if (!easing.empty() && !values.empty()) {
 			height = std::max(
 				h_ease + margin_b_easing + h_vals,
-				graph.empty() ? 0 : settings.graph.height + margin_b_graph);
-			pos_y_values = height - margin_b_easing;
+				graph.empty() ? 0 : settings.graph.height);
+			pos_y_values = height - h_vals;
 		}
 		else {
 			pos_y_values = 0;
-			height = std::max(
-				graph.empty() ? 0 : settings.graph.height + margin_b_graph,
-				std::max(h_ease, h_vals));
+			height = std::max(std::max(
+				easing.empty() ? 0 : h_ease,
+				values.empty() ? 0 : h_vals),
+				graph.empty() ? 0 : settings.graph.height);
 		}
 	}
 }
 
 inline void tooltip_content::draw(HDC dc, RECT const& rc) const
 {
+	if (!is_valid()) return;
+
 	// change the text color if specified.
 	if (settings.text_color >= 0)
 		::SetTextColor(dc, bgr2rgb(settings.text_color));
@@ -451,8 +456,11 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				if (settings.mode ||
 					(settings.values.is_enabled() && !(
 						obj.index_midpt_leader < 0 || // no mid-points.
-						easing_name_spec(mode).spec.twopoints)))
+						easing_name_spec(mode).spec.twopoints)) ||
+					settings.graph.enabled) {
 					reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = const_cast<char*>(" ");
+					content.invalidate();
+				}
 				break;
 			}
 			case TTN_SHOW:
@@ -477,14 +485,23 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 			case NM_CUSTOMDRAW:
 			{
 				auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
-				if (::IsWindowVisible(tooltip) == FALSE)
+				switch (dhdr->nmcd.dwDrawStage) {
+				case CDDS_PREPAINT:
+				{
 					// prepare the tooltip content.
 					content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
-				else if (dhdr->nmcd.dwDrawStage != CDDS_PREPAINT)
+					if (::IsWindowVisible(tooltip) != FALSE)
+						return CDRF_NOTIFYPOSTPAINT;
+					break;
+				}
+				case CDDS_POSTPAINT:
+				{
 					// draw the content.
 					content.draw(dhdr->nmcd.hdc, dhdr->nmcd.rc);
-				else return CDRF_NOTIFYPOSTPAINT;
-				break;
+					break;
+				}
+				}
+				return CDRF_DODEFAULT;
 			}
 			}
 		}
