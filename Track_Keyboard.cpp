@@ -47,20 +47,8 @@ static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&setting
 static constinit TrackInfo const* curr_info = nullptr;
 static constinit wchar_t last_text[std::bit_ceil(TrackInfo::max_value_len + 1)] = L"";
 
-static inline bool modify_number(auto&& modify, bool clamp)
+static inline bool modify_number_core(auto& text, int len, double val, bool clamp)
 {
-	wchar_t text[std::size(last_text)];
-	auto len = ::GetWindowTextW(curr_info->hwnd_label, text, std::size(text));
-	if (len >= static_cast<int>(std::size(text)) - 1) return false;
-
-	// parse the string as a number.
-	double val;
-	if (wchar_t* e; (val = std::wcstod(text, &e)) == HUGE_VAL ||
-		(*e != L'\0' && *e != L' ')) return false;
-
-	// apply the modification.
-	val = modify(val);
-
 	// doesn't clamp val into the min/max range by default,
 	// as this is an edit control so the user may want to edit it afterward.
 	if (clamp) val = std::clamp(val, curr_info->value_min(), curr_info->value_max());
@@ -71,7 +59,7 @@ static inline bool modify_number(auto&& modify, bool clamp)
 		dec_diff = pt - text; // text have fraction part.
 
 	// find the number of digits below the decimal point.
-	len = static_cast<int>(0.5f + std::log10f(static_cast<float>(std::max(curr_info->precision(), 1))));
+	len = std::lroundf(std::log10f(static_cast<float>(std::max(curr_info->precision(), 1))));
 	if (len > 0) dec_diff += 1 + len;
 
 	// format the number.
@@ -91,6 +79,23 @@ static inline bool modify_number(auto&& modify, bool clamp)
 	set_edit_selection(curr_info->hwnd_label, std::clamp(sel_l, 0, len), std::clamp(sel_r, 0, len));
 
 	return true;
+}
+
+static inline bool modify_number(auto&& modify, bool clamp)
+{
+	wchar_t text[std::size(last_text)];
+	auto len = ::GetWindowTextW(curr_info->hwnd_label, text, std::size(text));
+	if (len >= static_cast<int>(std::size(text)) - 1) return false;
+
+	// parse the string as a number.
+	double val;
+	if (wchar_t* e; (val = std::wcstod(text, &e)) == HUGE_VAL ||
+		(*e != L'\0' && *e != L' ')) return false;
+
+	// apply the modification.
+	val = modify(val);
+
+	return modify_number_core(text, len, val, clamp);
 }
 
 static constinit struct {

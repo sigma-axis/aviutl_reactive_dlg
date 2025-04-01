@@ -200,7 +200,7 @@ std::wstring expt::formatted_valuespan::to_string(int prec, bool ellip_l, bool e
 	constexpr std::wstring_view bra_l = L"[ ", bra_r = L" ]";
 
 	// helper lambda.
-	auto append = [n = static_cast<int>(0.5f + std::log10f(static_cast<float>(prec)))](std::wstring& left, double val) {
+	auto append = [n = std::lroundf(std::log10f(static_cast<float>(prec)))](std::wstring& left, double val) {
 		wchar_t buf[std::bit_ceil(TrackInfo::max_value_len + 1)];
 		static_cast<size_t>(::swprintf_s(buf, L"%.*f", n, val));
 		left += buf;

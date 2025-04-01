@@ -254,7 +254,6 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 		return X0 + std::lroundf(D * x);
 	};
 	auto const func_y = [Y0, D = Y1 - Y0](float y) -> int {
-		// note that D is negative.
 		return Y0 + std::lroundf(D * y);
 	};
 

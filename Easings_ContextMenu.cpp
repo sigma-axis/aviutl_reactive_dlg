@@ -213,7 +213,7 @@ struct target_tracks {
 		track_prec = trackinfo.precision();
 		track_min = trackinfo.val_int_min;
 		track_max = trackinfo.val_int_max;
-		track_prec_digits = static_cast<int>(0.5f + std::log10f(static_cast<float>(track_prec)));
+		track_prec_digits = std::lroundf(std::log10f(static_cast<float>(track_prec)));
 	}
 	target_tracks& operator=(target_tracks const&) = delete;
 	target_tracks(target_tracks const&) = delete;
