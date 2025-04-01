@@ -26,7 +26,6 @@ using byte = uint8_t;
 
 #include "str_encodes.hpp"
 #include "inifile_op.hpp"
-#include "monitors.hpp"
 
 #include "reactive_dlg.hpp"
 #include "Easings.hpp"
@@ -136,7 +135,7 @@ private:
 	constexpr static int
 		margin_r_easing = 8,
 		margin_b_easing = 4, margin_b_graph = 4;
-	constexpr static UINT draw_text_options = DT_NOCLIP | DT_HIDEPREFIX;
+	constexpr static UINT draw_text_options = DT_NOCLIP | DT_NOPREFIX;
 
 } content{};
 
@@ -182,12 +181,13 @@ inline void section_graph::plot(ExEdit::Object const& obj, size_t index, int den
 	auto const ofi = object_filter_index(obj_index, filter_index);
 	char* const arg_name = reinterpret_cast<char*>(1 + rel_idx); // represents the trackbar index.
 
-	// select frames.
 	size_t const num_sect = settings.graph.polls - 1;
 	int const frame_begin = obj.frame_begin,
 		frame_len = obj.frame_end - frame_begin
 		+ (obj.index_midpt_leader >= 0 && exedit.NextObjectIdxArray[obj_index] >= 0 ? 1 : 0);
 	float const len_f = static_cast<float>(std::max(frame_len, 1));
+
+	// select frames.
 	std::vector<int> frames{}; frames.reserve(num_sect + 1); frames.push_back(frame_begin);
 	for (size_t i = 0; i < num_sect; i++) {
 		int const f = frame_begin + (frame_len * (i + 1) + (num_sect >> 1)) / num_sect;
@@ -444,41 +444,27 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 
 	case WM_NOTIFY:
 		if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == tooltip) {
+			constexpr auto dummy_text_a = "\t";
+			constexpr auto dummy_text_w = L"\t";
+
 			switch (hdr->code) {
 			case TTN_GETDISPINFOA:
 			{
-				// compose the tooltip string.
+				// supply the content string, which is this time a dummy,
+				// or nothing if tooltip has no use for the current state.
 				size_t idx = static_cast<size_t>(data);
 				auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
 				auto const& mode = obj.track_mode[idx];
 				if ((mode.num & 0x0f) == 0) break; // 移動無し
-				if (settings.mode ||
+				if (settings.mode || settings.graph.enabled ||
 					(settings.values.is_enabled() && !(
 						obj.index_midpt_leader < 0 || // no mid-points.
-						easing_name_spec(mode).spec.twopoints)) ||
-					settings.graph.enabled) {
-					reinterpret_cast<NMTTDISPINFOA*>(lparam)->lpszText = const_cast<char*>(" ");
+						easing_name_spec(mode).spec.twopoints))) {
+					reinterpret_cast<NMTTDISPINFOA*>(lparam)
+						->lpszText = const_cast<char*>(dummy_text_a);
 					content.invalidate();
 				}
-				break;
-			}
-			case TTN_SHOW:
-			{
-				// adjust the tooltip size to fit with the content.
-				RECT rc;
-				::GetWindowRect(tooltip, &rc);
-				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
-				rc.right = rc.left + content.width + 2; // add slight extra space on the right and bottom.
-				rc.bottom = rc.top + content.height + 1;
-				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
-
-				// adjust the position not to clip edges of screens.
-				rc = sigma_lib::W32::monitor<true>{ rc.left, rc.top }
-					.expand(-8).clamp(rc); // 8 pixels of padding.
-				::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
-					rc.right - rc.left, rc.bottom - rc.top,
-					SWP_NOZORDER | SWP_NOACTIVATE);
-				return TRUE;
+				return 0;
 			}
 
 			case NM_CUSTOMDRAW:
@@ -489,8 +475,20 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				{
 					// prepare the tooltip content.
 					content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
+
+					// actual drawing is done on the CDDS_POSTPAINT notification.
 					if (::IsWindowVisible(tooltip) != FALSE)
 						return CDRF_NOTIFYPOSTPAINT;
+
+					// if the tooltip window is invisible, it's measuring its own size,
+					// and will resize before it actually draws itself.
+					// calculate the lacking size and set the margin for it,
+					// so the size of the tooltip will fit with the desired content.
+					RECT margin{};
+					::DrawTextW(dhdr->nmcd.hdc, dummy_text_w, 1, &margin, dhdr->uDrawFlags | DT_CALCRECT);
+					margin.right = content.width - margin.right + 1; // slight extra space on the right.
+					margin.bottom = content.height - margin.bottom;
+					::SendMessageW(tooltip, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
 					break;
 				}
 				case CDDS_POSTPAINT:
