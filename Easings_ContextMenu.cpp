@@ -15,6 +15,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <span>
 #include <string>
 #include <map>
+#include <concepts>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -259,14 +260,22 @@ struct copy : cmd_base {
 };
 
 struct modify_base : cmd_base {
-	void execute(this auto const& self)
-	{
-		push_undo(self.info);
+	template<std::derived_from<modify_base> CommandT>
+	void execute(this CommandT const& self) {
+		// type erasing to reduce the binary size.
+		self.execute_core(static_cast<modify_values_ptr>(&CommandT::modify_values));
+	}
 
-		for (auto [i, track] : self.info.targets) {
+private:
+	using modify_values_ptr = void(modify_base::*)(int, std::vector<int>&, target_track const&) const;
+	void execute_core(modify_values_ptr modify_values) const
+	{
+		push_undo(info);
+
+		for (auto [i, track] : info.targets) {
 			auto chain = collect_pos_chain((*exedit.ObjectArray_ptr)[i]).second;
 			auto values = collect_int_values(chain, track.track_index);
-			self.modify_values(self.info.selected_section, values, track);
+			(this->*modify_values)(info.selected_section, values, track);
 			apply_int_values(chain, values, track.track_index);
 		}
 	}
@@ -813,7 +822,7 @@ static inline bool on_context_menu(HWND hwnd, size_t idx)
 		return ::RemoveMenu(menu, ::GetMenuItemCount(menu) - 1, MF_BYPOSITION);
 	};
 
-	target_tracks info{ idx };
+	target_tracks const info{ idx };
 
 	// prepare the context menu.
 	auto menu = ::CreatePopupMenu();
