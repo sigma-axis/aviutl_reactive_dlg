@@ -142,7 +142,8 @@ expt::formatted_values::formatted_values(std::wstring src) : vals{}, section{}
 	};
 
 	// limit the source to the first line of the string.
-	src = src.erase(std::min(src.size(), src.find_first_of(L"\r\n")));
+	if (auto const pos = src.find_first_of(L"\r\n");
+		pos != src.npos) src.erase(pos);
 
 	// identify the bracket positions.
 	auto const pos_bra_l = find_unique(src, L'['), pos_bra_r = find_unique(src, L']');
