@@ -47,10 +47,11 @@ static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&setting
 static constinit POINT prev_drag_pos{};
 static constinit int drag_step_size = -1, step_progress = 0;
 static constexpr bool settings_drag_is_enabled() { return drag_step_size >= 0; }
-static inline HCURSOR cursor_on_wheel() {
+template<auto cursor_id>
+static inline HCURSOR cursor_cache() {
 	static constinit HCURSOR cache = nullptr;
 	if (cache == nullptr)
-		cache = ::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(IDC_HAND));
+		cache = ::LoadCursorW(nullptr, reinterpret_cast<PCWSTR>(cursor_id));
 	return cache;
 }
 
@@ -64,7 +65,7 @@ static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM 
 	switch (message) {
 	case WM_MOUSEMOVE:
 	{
-		if (flags != 0) break;
+		if (flags != 0) return 0; // let do nothing.
 
 		POINT pt; ::GetCursorPos(&pt);
 		if (pt.x == prev_drag_pos.x && pt.y == prev_drag_pos.y) break;
@@ -114,28 +115,35 @@ static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM 
 		}
 		break;
 	}
-	case WM_RBUTTONUP:
-		// avoid the context menu from appearing.
+
+	// suppress the context menu by WM_RBUTTONUP.
+	case WM_LBUTTONUP:
 		if (settings.drag.step_size != settings.drag.r_step_size) {
-			if (flags != 0) ::RemoveWindowSubclass(hwnd, &track_label_hook, id);
-			return 0;
+			if ((wparam & MK_RBUTTON) != 0) {
+				if (flags == 0) {
+					// set the flag to "wait for right-button to be released" state.
+					::SetWindowSubclass(hwnd, &track_label_hook, id, 1);
+					::SetCursor(cursor_cache<IDC_ARROW>());
+				}
+				return 0; // keep capturing the mouse.
+			}
+		}
+		break;
+	case WM_RBUTTONUP:
+		if (settings.drag.step_size != settings.drag.r_step_size) {
+			if (flags != 0 && (wparam & MK_LBUTTON) == 0) {
+				message = WM_LBUTTONUP; // let process as a left-up message.
+				break;
+			}
+			return 0; // suppress the context menu.
 		}
 		break;
 
 	case WM_CAPTURECHANGED:
-		if (flags == 0) {
-			// ignore when re-capturing the same window.
-			if (hwnd == reinterpret_cast<HWND>(lparam)) break;
-			if (nullptr == reinterpret_cast<HWND>(lparam) &&
-				settings.drag.step_size != settings.drag.r_step_size &&
-				::GetKeyState(VK_RBUTTON) < 0) {
-				// set the flag to "wait for right-button to be released" state.
-				::SetWindowSubclass(hwnd, &track_label_hook, id, 1);
-				break;
-			}
-		}
-	[[fallthrough]];
-	case WM_MOUSELEAVE:
+		// ignore when re-capturing the same window.
+		if (hwnd == reinterpret_cast<HWND>(lparam)) break;
+		[[fallthrough]];
+	case WM_DESTROY:
 		::RemoveWindowSubclass(hwnd, &track_label_hook, id);
 		break;
 	}
@@ -155,10 +163,6 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 					::GetCursorPos(&prev_drag_pos);
 					step_progress = drag_step_size >> 1;
 
-					if (settings.drag.step_size != settings.drag.r_step_size) {
-						TRACKMOUSEEVENT tme{ .cbSize = sizeof(tme), .dwFlags = TME_LEAVE, .hwndTrack = ctrl };
-						auto result = ::TrackMouseEvent(&tme);
-					}
 					::SetWindowSubclass(ctrl, &track_label_hook, hook_uid(), 0);
 					/* known issue:
 					* when tab key is pressed while dragging to move the focus,
@@ -234,7 +238,7 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 
 				// if the track is found, change the cursor to hand.
 				if (find_trackinfo(pt) != nullptr) {
-					::SetCursor(cursor_on_wheel());
+					::SetCursor(cursor_cache<IDC_HAND>());
 					return TRUE;
 				}
 			}

@@ -15,7 +15,6 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <span>
 #include <string>
 #include <map>
-#include <concepts>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -261,7 +260,7 @@ struct copy : cmd_base {
 };
 
 struct modify_base : cmd_base {
-	template<std::derived_from<modify_base> CommandT>
+	template<class CommandT>
 	void execute(this CommandT const& self) {
 		// type erasing to reduce the binary size.
 		self.execute_core(static_cast<modify_values_ptr>(&CommandT::modify_values));
