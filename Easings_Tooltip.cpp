@@ -459,7 +459,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				if (settings.mode || settings.graph.enabled ||
 					(settings.values.is_enabled() && !(
 						obj.index_midpt_leader < 0 || // no mid-points.
-						easing_name_spec(mode).spec.twopoints))) {
+						easing_spec{ mode }.twopoints))) {
 					reinterpret_cast<NMTTDISPINFOA*>(lparam)
 						->lpszText = const_cast<char*>(dummy_text_a);
 					content.invalidate();

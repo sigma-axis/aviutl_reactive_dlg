@@ -11,6 +11,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 */
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 #include <map>
 #include <string>
@@ -44,38 +45,42 @@ using namespace reactive_dlg::Filters::ScriptName;
 
 static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&settings); }
 
-#ifndef _DEBUG
-constinit
-#endif // !_DEBUG
-static class {
-	std::vector<char const*> names{};
-	char const* find(size_t idx) {
-		// dynamically construct index -> name mapping.
-		while (idx >= names.size()) {
-			auto str = names.back();
-			str += std::strlen(str) + 1;
-			if (str[0] == '\0') return nullptr;
-			names.push_back(str);
-		}
-		return names[idx];
-	}
-
-public:
+static constinit struct {
 	// supply this struct with the heading pointer, turning the functionality enabled.
-	void init(char const* head) {
-		names.clear();
-		names.push_back(head);
-	}
+	void init(char const* head) { this->head = head; }
 
 	// retrieves the name of the script for the fiter at the given index of the given object.
 	// the filter is known to have the specific type of exdata.
 	template<class ExDataT>
 	char const* get(ExEdit::Object const& leader, ExEdit::Object::FilterParam const& filter_param) {
+		if (!names) collect();
+
 		ptrdiff_t offset = leader.exdata_offset + filter_param.exdata_offset;
 		auto exdata = reinterpret_cast<ExDataT*>((*exedit.exdata_table) + offset + 0x0004);
 		return exdata->name[0] != '\0' ? exdata->name : find(exdata->type);
 	}
-} basic_anm_names{}, basic_obj_names{}, basic_cam_names{}, basic_scn_names{};
+
+private:
+	char const* head = nullptr;
+	std::unique_ptr<char const*[]> names{};
+	size_t count = 0;
+	char const* find(size_t idx) { return idx < count ? names[idx] : nullptr; }
+	void collect()
+	{
+		// collect the heading pointers to each name.
+		std::vector<char const*> buf{};
+		while (*head != '\0') {
+			buf.push_back(head);
+			head += std::strlen(head) + 1;
+		}
+
+		// store as a unique pointer.
+		count = buf.size();
+		names = std::make_unique_for_overwrite<char const* []>(count);
+		for (size_t i = 0; i < count; i++) names[i] = buf[i];
+	}
+
+} basic_anm_names, basic_obj_names, basic_cam_names, basic_scn_names;
 
 // return the script name of the filter at the given index in the object,
 // or nullptr if it's not a script-based filter, plus the filter id.

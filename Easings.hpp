@@ -34,20 +34,24 @@ namespace reactive_dlg::Easings
 	// easing specifications.
 	struct easing_spec {
 		bool speed, param, twopoints, loaded;
-		constexpr easing_spec(size_t idx, uint32_t val)
-			: speed{ (val & flag_speed) != 0 }
-			, param{ (val & flag_param) != 0 }
-			, twopoints{ idx >= 4 && idx != 7 }
-			, loaded{ true } {}
-		constexpr easing_spec(uint8_t val)
-			: speed{ (val & flag_speed) != 0 }
-			, param{ (val & flag_param) != 0 }
-			, twopoints{ (val & flag_twopoints) != 0 }
-			, loaded{ (val & flag_loaded) != 0 } {}
+		constexpr easing_spec(bool speed, bool param, bool twopoints, bool loaded)
+			: speed{ speed }
+			, param{ param }
+			, twopoints{ twopoints }
+			, loaded{ loaded } {}
+		// makes sense only for script easings.
+		constexpr explicit easing_spec(uint8_t flags) : easing_spec{
+			(flags & flag_speed) != 0,
+			(flags & flag_param) != 0,
+			(flags & flag_twopoints) != 0,
+			(flags & flag_loaded) != 0 } {}
+		explicit easing_spec(ExEdit::Object::TrackMode const& mode);
 
 		easing_spec() = default;
+		easing_spec(easing_spec const&) = default;
+		easing_spec(easing_spec&&) = default;
+		easing_spec& operator=(easing_spec const&) = default;
 
-	private:
 		constexpr static uint8_t
 			flag_speed		= 1 << 0,
 			flag_param		= 1 << 1,
@@ -57,7 +61,7 @@ namespace reactive_dlg::Easings
 
 	// the pair of name and spec of an easing.
 	struct easing_name_spec {
-		std::string_view name;
+		std::string_view name; // NOTE: may not be null-terminated.
 		easing_spec spec;
 
 		easing_name_spec() = default;

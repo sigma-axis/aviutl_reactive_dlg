@@ -46,13 +46,13 @@ using namespace reactive_dlg::Easings::ContextMenu;
 
 static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&settings); }
 
-template<class exdata>
+template<class ExDataT>
 static inline bool scripts_match(ExEdit::Object const& obj1, int filter_index1, ExEdit::Object const& obj2, int filter_index2)
 {
 	auto& leader1 = obj1.index_midpt_leader < 0 ? obj1 : (*exedit.ObjectArray_ptr)[obj1.index_midpt_leader],
 		& leader2 = obj2.index_midpt_leader < 0 ? obj2 : (*exedit.ObjectArray_ptr)[obj2.index_midpt_leader];
-	auto data1 = reinterpret_cast<exdata const*>((*exedit.exdata_table) + leader1.filter_param[filter_index1].exdata_offset + 0x0004),
-		data2 = reinterpret_cast<exdata const*>((*exedit.exdata_table) + leader2.filter_param[filter_index2].exdata_offset + 0x0004);
+	auto data1 = reinterpret_cast<ExDataT const*>((*exedit.exdata_table) + leader1.filter_param[filter_index1].exdata_offset + 0x0004),
+		data2 = reinterpret_cast<ExDataT const*>((*exedit.exdata_table) + leader2.filter_param[filter_index2].exdata_offset + 0x0004);
 	if (data1->name[0] != '\0')
 		return std::strcmp(data1->name, data2->name) == 0;
 	return data2->name[0] == '\0' && data1->type == data2->type;
@@ -118,7 +118,7 @@ struct target_track {
 		auto const& mode = obj.track_mode[track_index];
 		easing_none = (mode.num & 0x0f) == idx_easing_none;
 		easing_step = (mode.num & 0x0f) == idx_easing_step;
-		easing_twopoints = easing_name_spec(mode).spec.twopoints;
+		easing_twopoints = easing_spec{ mode }.twopoints;
 	}
 	constexpr size_t values_count() const {
 		return easing_none ? 1 : easing_twopoints ? 2 : midpoints_count + 2;
@@ -255,7 +255,8 @@ struct copy : cmd_base {
 	{
 		auto [obj, track] = info.selected_track();
 		sigma_lib::W32::clipboard::write(
-			formatted_values{ obj, track.track_index }.span().to_string(info.track_prec, false, false, false));
+			formatted_values{ obj, track.track_index }.span()
+			.to_string(info.track_prec, false, false, false));
 	}
 };
 
@@ -272,8 +273,9 @@ private:
 	{
 		push_undo(info);
 
-		for (auto [i, track] : info.targets) {
-			auto chain = collect_pos_chain((*exedit.ObjectArray_ptr)[i]).second;
+		auto const* const objects = *exedit.ObjectArray_ptr;
+		for (auto const& [i, track] : info.targets) {
+			auto chain = collect_pos_chain(objects[i]).second;
 			auto values = collect_int_values(chain, track.track_index);
 			(this->*modify_values)(info.selected_section, values, track);
 			apply_int_values(chain, values, track.track_index);

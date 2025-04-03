@@ -13,6 +13,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <cstdint>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <vector>
 #include <tuple>
 #include <string>
@@ -45,7 +46,7 @@ struct script_name {
 		// script names are stored in forms of either:
 		//   i) "<name1>\x1<directory1>\0"
 		//  ii) "<name>\0"
-		if (auto pos = raw.find('\x01'); pos != std::string_view::npos) {
+		if (auto pos = raw.find('\x01'); pos != raw.npos) {
 			name = raw.substr(0, pos);
 			dir = raw.substr(pos + 1);
 		}
@@ -54,19 +55,29 @@ struct script_name {
 			dir = "";
 		}
 	}
-};
-static inline script_name const& script_names(size_t idx) {
-#ifndef _DEBUG
-	constinit
-#endif // !_DEBUG
-	static std::vector<script_name> ret{};
-	if (ret.empty()) {
-		auto* ptr = exedit.track_script_names;
-		while (*ptr != '\0') ret.emplace_back(ptr);
-		ret.shrink_to_fit();
+	script_name() = default;
+	script_name(script_name const&) = default;
+	script_name& operator=(script_name const&) = default;
+
+	static script_name const& from_index(size_t idx)
+	{
+		if (!names) collect();
+		return names[idx];
 	}
-	return ret[idx];
-}
+
+private:
+	static inline constinit std::unique_ptr<script_name[]> names{};
+	static void collect()
+	{
+		std::vector<script_name> buf{};
+		auto* ptr = exedit.track_script_names;
+		while (*ptr != '\0') buf.emplace_back(ptr);
+
+		// store as a unique pointer.
+		names = std::make_unique<script_name[]>(buf.size());
+		for (size_t i = 0; i < buf.size(); i++) names[i] = buf[i];
+	}
+};
 
 // built-in easing names.
 static constexpr std::string_view basic_track_mode_names[]{
@@ -80,8 +91,27 @@ static constexpr std::string_view basic_track_mode_names[]{
 	"加減速移動",
 	"反復移動",
 };
-NS_END
 
+constexpr static void easing_spec_builtin(easing_spec& self, size_t basic_idx)
+{
+	auto const flags = exedit.easing_specs_builtin[basic_idx];
+	self = {
+		(flags & easing_spec::flag_speed) != 0,
+		(flags & easing_spec::flag_param) != 0,
+		basic_idx >= 4 && basic_idx != 7,
+		true,
+	};
+}
+
+static void easing_spec_script(easing_spec& self, size_t script_idx)
+{
+	auto const& flags = exedit.easing_specs_script[script_idx];
+	if ((flags & easing_spec::flag_loaded) == 0)
+		// script wasn't loaded yet. try after loading.
+		exedit.load_easing_spec(script_idx, 0, 0);
+	self = easing_spec{ flags };
+}
+NS_END
 
 
 ////////////////////////////////
@@ -89,24 +119,26 @@ NS_END
 ////////////////////////////////
 namespace expt = reactive_dlg::Easings;
 
+#pragma warning(suppress : 26495) // uninitialized memebers.
+expt::easing_spec::easing_spec(ExEdit::Object::TrackMode const& mode)
+{
+	if (size_t const basic_idx = mode.num & 0x0f;
+		basic_idx == mode.isScript)
+		easing_spec_script(*this, mode.script_idx);
+	else easing_spec_builtin(*this, basic_idx);
+}
+
 expt::easing_name_spec::easing_name_spec(ExEdit::Object::TrackMode const& mode)
 {
-	size_t const basic_idx = mode.num & 0x0f;
-	bool const is_scr = basic_idx == mode.isScript;
-
-#pragma warning(suppress : 6385)
-	// name of the easing.
-	name = is_scr ?
-		script_names(mode.script_idx).name :
-		basic_track_mode_names[basic_idx];
-
-	// identify its specification, especially whether it accepts a parameter.
-	spec = is_scr ? easing_spec{ exedit.easing_specs_script[mode.script_idx] } :
-		easing_spec{ basic_idx, exedit.easing_specs_builtin[basic_idx] };
-	if (!spec.loaded) {
-		// script wasn't loaded yet. try after loading.
-		exedit.load_easing_spec(mode.script_idx, 0, 0);
-		spec = { exedit.easing_specs_script[mode.script_idx] };
+	if (size_t const basic_idx = mode.num & 0x0f;
+		basic_idx == mode.isScript) {
+		name = script_name::from_index(mode.script_idx).name;
+		easing_spec_script(spec, mode.script_idx);
+	}
+	else {
+	#pragma warning(suppress : 6385)
+		name = basic_track_mode_names[basic_idx];
+		easing_spec_builtin(spec, basic_idx);
 	}
 }
 
@@ -136,8 +168,7 @@ expt::formatted_values::formatted_values(std::wstring src) : vals{}, section{}
 	};
 	constexpr auto find_unique = [](std::wstring const& src, wchar_t c) -> wchar_t const* {
 		auto pos = src.find(c);
-		if (pos == std::wstring::npos ||
-			src.find(c, pos + 1) != std::wstring::npos) return nullptr;
+		if (pos == src.npos || src.find(c, pos + 1) != src.npos) return nullptr;
 		return src.data() + pos;
 	};
 
@@ -254,7 +285,7 @@ std::pair<int, std::vector<int>> expt::collect_pos_chain(ExEdit::Object const& o
 		if (i == j) pos_chain = chain.size();
 		chain.push_back(j);
 	}
-	return { pos_chain, chain };
+	return { pos_chain, std::move(chain) };
 }
 
 std::vector<int> expt::collect_int_values(std::vector<int> const& chain, size_t idx_track)
@@ -262,7 +293,7 @@ std::vector<int> expt::collect_int_values(std::vector<int> const& chain, size_t 
 	auto const* const objects = *exedit.ObjectArray_ptr;
 	auto const& leading = objects[chain.front()];
 	auto const mode = leading.track_mode[idx_track];
-	auto const spec = easing_name_spec{ leading.track_mode[idx_track] }.spec;
+	auto const spec = easing_spec{ leading.track_mode[idx_track] };
 
 	std::vector<int> values{ leading.track_value_left[idx_track] };
 	if ((mode.num & 0x0f) == 0); // sole value.
@@ -281,7 +312,7 @@ void expt::apply_int_values(std::vector<int> const& chain, std::vector<int> cons
 	auto* const objects = *exedit.ObjectArray_ptr;
 	auto& leading = objects[chain.front()];
 	auto const mode = leading.track_mode[idx_track];
-	auto const spec = easing_name_spec{ leading.track_mode[idx_track] }.spec;
+	auto const spec = easing_spec{ leading.track_mode[idx_track] };
 
 	int val_l = values.front();
 	if ((mode.num & 0x0f) == 0) {
