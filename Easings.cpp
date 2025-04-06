@@ -13,7 +13,6 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <cstdint>
 #include <algorithm>
 #include <cmath>
-#include <memory>
 #include <vector>
 #include <tuple>
 #include <string>
@@ -55,47 +54,37 @@ struct script_name {
 			dir = "";
 		}
 	}
-	script_name() = default;
-	script_name(script_name const&) = default;
-	script_name& operator=(script_name const&) = default;
 
 	static script_name const& from_index(size_t idx)
 	{
-		if (!names) collect();
+		collect();
 		return names[idx];
 	}
 
+	static size_t count() {
+		collect();
+		return names.size();
+	}
+
 private:
-	static inline constinit std::unique_ptr<script_name[]> names{};
+#ifndef _DEBUG
+	constinit
+#endif // !_DEBUG
+	static inline std::vector<script_name> names{};
 	static void collect()
 	{
-		std::vector<script_name> buf{};
-		auto* ptr = exedit.track_script_names;
-		while (*ptr != '\0') buf.emplace_back(ptr);
+		if (names.size() > 0) return;
 
-		// store as a unique pointer.
-		names = std::make_unique<script_name[]>(buf.size());
-		for (size_t i = 0; i < buf.size(); i++) names[i] = buf[i];
+		for (auto* ptr = exedit.track_script_names;
+			*ptr != '\0'; names.emplace_back(ptr));
+		names.shrink_to_fit();
 	}
 };
 
-// built-in easing names.
-static constexpr std::string_view basic_track_mode_names[]{
-	"移動無し",
-	"直線移動",
-	"曲線移動",
-	"瞬間移動",
-	"中間点無視",
-	"移動量指定",
-	"ランダム移動",
-	"加減速移動",
-	"反復移動",
-};
-
-constexpr static void easing_spec_builtin(easing_spec& self, size_t basic_idx)
+constexpr static easing_spec easing_spec_builtin(size_t basic_idx)
 {
 	auto const flags = exedit.easing_specs_builtin[basic_idx];
-	self = {
+	return {
 		(flags & easing_spec::flag_speed) != 0,
 		(flags & easing_spec::flag_param) != 0,
 		basic_idx >= 4 && basic_idx != 7,
@@ -103,13 +92,13 @@ constexpr static void easing_spec_builtin(easing_spec& self, size_t basic_idx)
 	};
 }
 
-static void easing_spec_script(easing_spec& self, size_t script_idx)
+static easing_spec easing_spec_script(size_t script_idx)
 {
 	auto const& flags = exedit.easing_specs_script[script_idx];
 	if ((flags & easing_spec::flag_loaded) == 0)
 		// script wasn't loaded yet. try after loading.
 		exedit.load_easing_spec(script_idx, 0, 0);
-	self = easing_spec{ flags };
+	return easing_spec{ flags };
 }
 NS_END
 
@@ -119,28 +108,32 @@ NS_END
 ////////////////////////////////
 namespace expt = reactive_dlg::Easings;
 
-#pragma warning(suppress : 26495) // uninitialized memebers.
-expt::easing_spec::easing_spec(ExEdit::Object::TrackMode const& mode)
+expt::easing_spec::easing_spec(ExEdit::Object::TrackMode mode)
 {
-	if (size_t const basic_idx = mode.num & 0x0f;
-		basic_idx == mode.isScript)
-		easing_spec_script(*this, mode.script_idx);
-	else easing_spec_builtin(*this, basic_idx);
+	size_t const basic_idx = mode.num & 0x0f;
+	*this = basic_idx == mode.isScript ?
+		easing_spec_script(mode.script_idx) :
+		easing_spec_builtin(basic_idx);
 }
 
-expt::easing_name_spec::easing_name_spec(ExEdit::Object::TrackMode const& mode)
+expt::easing_name_spec::easing_name_spec(ExEdit::Object::TrackMode mode)
 {
 	if (size_t const basic_idx = mode.num & 0x0f;
 		basic_idx == mode.isScript) {
-		name = script_name::from_index(mode.script_idx).name;
-		easing_spec_script(spec, mode.script_idx);
+		auto& n = script_name::from_index(mode.script_idx);
+		name = n.name;
+		directory = n.dir;
+		spec = easing_spec_script(mode.script_idx);
 	}
 	else {
 	#pragma warning(suppress : 6385)
-		name = basic_track_mode_names[basic_idx];
-		easing_spec_builtin(spec, basic_idx);
+		name = basic_names[basic_idx];
+		directory = "";
+		spec = easing_spec_builtin(basic_idx);
 	}
 }
+
+size_t expt::easing_name_spec::script_count() { return script_name::count(); }
 
 expt::formatted_values::formatted_values(ExEdit::Object const& obj, size_t idx_track) : vals{}
 {

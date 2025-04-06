@@ -117,25 +117,23 @@ static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM 
 	}
 
 	// suppress the context menu by WM_RBUTTONUP.
+	case WM_LBUTTONDOWN:
 	case WM_LBUTTONUP:
-		if (settings.drag.step_size != settings.drag.r_step_size) {
-			if ((wparam & MK_RBUTTON) != 0) {
-				if (flags == 0) {
-					// set the flag to "wait for right-button to be released" state.
-					::SetWindowSubclass(hwnd, &track_label_hook, id, 1);
-					::SetCursor(cursor_cache<IDC_ARROW>());
-				}
-				return 0; // keep capturing the mouse.
+		if (settings.drag.step_size != settings.drag.r_step_size &&
+			(wparam & MK_RBUTTON) != 0) {
+			if (flags == 0) {
+				// set the flag to "wait for right-button to be released" state.
+				::SetWindowSubclass(hwnd, &track_label_hook, id, 1);
+				::SetCursor(cursor_cache<IDC_ARROW>());
 			}
+			return 0; // keep capturing the mouse.
 		}
 		break;
 	case WM_RBUTTONUP:
 		if (settings.drag.step_size != settings.drag.r_step_size) {
-			if (flags != 0 && (wparam & MK_LBUTTON) == 0) {
-				message = WM_LBUTTONUP; // let process as a left-up message.
-				break;
-			}
-			return 0; // suppress the context menu.
+			if (flags == 0 || (wparam & MK_LBUTTON) != 0)
+				return 0; // suppress the context menu.
+			message = WM_LBUTTONUP; // let process as a left-up message.
 		}
 		break;
 
@@ -224,8 +222,7 @@ static inline LRESULT CALLBACK setting_dlg_hook(HWND hwnd, UINT message, WPARAM 
 		if (settings.wheel.enabled && settings.wheel.cursor_react &&
 			*exedit.SettingDialogObjectIndex >= 0) {
 			// check if it's not in a dragging state.
-			if (*exedit.track_label_is_dragging != 0 && ::GetCapture() != nullptr)
-				return TRUE;
+			if (::GetCapture() != nullptr) return TRUE;
 
 			// check for the activation key.
 			auto keys = curr_modkeys();

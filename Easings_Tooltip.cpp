@@ -47,7 +47,7 @@ static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&setting
 static constinit HWND tooltip = nullptr;
 
 // formatting a string that describes to the track mode.
-static inline std::wstring format_easing(ExEdit::Object::TrackMode const& mode, int32_t param, easing_name_spec const& name_spec)
+static inline std::wstring format_easing(ExEdit::Object::TrackMode mode, int32_t param, easing_name_spec const& name_spec)
 {
 	// get name and specification.
 	auto ret = sigma_lib::string::encode_sys::to_wide_str(name_spec.name);

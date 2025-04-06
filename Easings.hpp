@@ -45,7 +45,7 @@ namespace reactive_dlg::Easings
 			(flags & flag_param) != 0,
 			(flags & flag_twopoints) != 0,
 			(flags & flag_loaded) != 0 } {}
-		explicit easing_spec(ExEdit::Object::TrackMode const& mode);
+		explicit easing_spec(ExEdit::Object::TrackMode mode);
 
 		easing_spec() = default;
 		easing_spec(easing_spec const&) = default;
@@ -61,11 +61,24 @@ namespace reactive_dlg::Easings
 
 	// the pair of name and spec of an easing.
 	struct easing_name_spec {
-		std::string_view name; // NOTE: may not be null-terminated.
+		std::string_view name, // NOTE: `name` may not be null-terminated.
+			directory;
 		easing_spec spec;
 
-		easing_name_spec() = default;
-		easing_name_spec(ExEdit::Object::TrackMode const& mode);
+		easing_name_spec(ExEdit::Object::TrackMode mode);
+		static size_t script_count();
+		constexpr static std::string_view basic_names[]{
+			"移動無し",
+			"直線移動",
+			"曲線移動",
+			"瞬間移動",
+			"中間点無視",
+			"移動量指定",
+			"ランダム移動",
+			"加減速移動",
+			"反復移動",
+		};
+		constexpr static size_t basic_count = std::size(basic_names);
 	};
 
 	// copy-paste formatting, adjusted for displaying.
