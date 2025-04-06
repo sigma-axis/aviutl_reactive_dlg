@@ -26,6 +26,7 @@ using byte = uint8_t;
 
 #include "str_encodes.hpp"
 #include "inifile_op.hpp"
+#include "monitors.hpp"
 
 #include "reactive_dlg.hpp"
 #include "Easings.hpp"
@@ -464,7 +465,25 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 						->lpszText = const_cast<char*>(dummy_text_a);
 					content.invalidate();
 				}
-				return 0;
+				break;
+			}
+			case TTN_SHOW:
+			{
+				// adjust the tooltip size to fit with the content.
+				RECT rc;
+				::GetWindowRect(tooltip, &rc);
+				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
+				rc.right = rc.left + content.width + 2; // add slight extra space on the right and bottom.
+				rc.bottom = rc.top + content.height + 1;
+				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
+
+				// adjust the position not to clip edges of screens.
+				rc = sigma_lib::W32::monitor<true>{ rc.left, rc.top }
+					.expand(-8).clamp(rc); // 8 pixels of padding.
+				::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
+					rc.right - rc.left, rc.bottom - rc.top,
+					SWP_NOZORDER | SWP_NOACTIVATE);
+				return TRUE;
 			}
 
 			case NM_CUSTOMDRAW:
@@ -484,11 +503,13 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 					// and will resize before it actually draws itself.
 					// calculate the lacking size and set the margin for it,
 					// so the size of the tooltip will fit with the desired content.
-					RECT margin{};
-					::DrawTextW(dhdr->nmcd.hdc, dummy_text_w, 1, &margin, dhdr->uDrawFlags | DT_CALCRECT);
-					margin.right = content.width - margin.right + 1; // slight extra space on the right.
-					margin.bottom = content.height - margin.bottom;
-					::SendMessageW(tooltip, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
+					//RECT margin{};
+					//::DrawTextW(dhdr->nmcd.hdc, dummy_text_w, 1, &margin, dhdr->uDrawFlags | DT_CALCRECT);
+					//margin.right = content.width - margin.right + 1; // slight extra space on the right.
+					//margin.bottom = content.height - margin.bottom;
+					//::SendMessageW(tooltip, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
+
+					// NOTE: when visual style is applied, the margin has no effect.
 					break;
 				}
 				case CDDS_POSTPAINT:
