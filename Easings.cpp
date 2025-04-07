@@ -151,7 +151,7 @@ expt::formatted_values::formatted_values(ExEdit::Object const& obj, size_t idx_t
 	for (int value : values) vals.push_back(value / denom);
 }
 
-expt::formatted_values::formatted_values(std::wstring src) : vals{}, section{}
+expt::formatted_values::formatted_values(std::wstring src) : vals{}, section{ -1 }
 {
 	// helper lambdas.
 	constexpr auto is_numeric = [](wchar_t c) {
