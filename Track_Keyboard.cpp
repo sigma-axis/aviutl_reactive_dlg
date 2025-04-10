@@ -98,6 +98,10 @@ static inline bool modify_number(auto&& modify, bool clamp)
 	return modify_number_core(text, len, val, clamp);
 }
 
+decltype(::TrackPopupMenu) popup_easing_menu_hook;
+static constinit auto* popup_easing_menu_hook_addr = &popup_easing_menu_hook;
+static constinit auto const* popup_easing_menu = &popup_easing_menu_hook_addr;
+
 static constinit struct {
 	uint16_t idx = ~0;
 	byte alt_state = 0;
@@ -130,7 +134,7 @@ static inline LRESULT CALLBACK track_label_hook(HWND hwnd, UINT message, WPARAM 
 				int const prec = curr_info->precision();
 				double const delta = (vkey == VK_UP ? +1.0 : -1.0)
 					* settings.updown.calc_rate(keys, prec) / prec;
-				if (modify_number([delta](double x) { return x +  delta; }, settings.updown.clamp))
+				if (modify_number([delta](double x) { return x + delta; }, settings.updown.clamp))
 					// prevent calling the default window procedure.
 					return 0;
 			}
@@ -268,13 +272,20 @@ static inline BOOL WINAPI popup_easing_menu_hook(HMENU menu, UINT flags, int x, 
 		TPMPARAMS p{ .cbSize = sizeof(p) };
 		::GetWindowRect(btn, &p.rcExclude);
 
-		// メニュー表示．
-		return ::TrackPopupMenuEx(menu, flags | TPM_VERTICAL,
-			p.rcExclude.left, p.rcExclude.top, hwnd, &p);
+		if (*popup_easing_menu == &::TrackPopupMenu) {
+			// メニュー表示．
+			return ::TrackPopupMenuEx(menu, flags | TPM_VERTICAL,
+				p.rcExclude.left, p.rcExclude.top, hwnd, &p);
+		}
+		else {
+			x = p.rcExclude.left; y = p.rcExclude.bottom;
+
+			// この関数以前に同じ関数がフックされているときは元の関数を呼び出す．
+		}
 	}
 
 	// 条件を満たさない場合は未介入のデフォルト処理．
-	return ::TrackPopupMenu(menu, flags, x, y, nReserved, hwnd, prcRect);
+	return (*popup_easing_menu)(menu, flags, x, y, nReserved, hwnd, prcRect);
 }
 NS_END
 
@@ -294,9 +305,9 @@ bool expt::setup(HWND hwnd, bool initializing)
 			if (settings.easing_menu.is_enabled())
 				// ff 15 xx xx xx xx	call	dword ptr ds:[TrackPopupMenu]
 				// V
-				// e8 yy yy yy yy		call	yyyyyyyy
-				// 90					nop
-				sigma_lib::memory::hook_api_call(exedit.call_easing_popup_menu, &popup_easing_menu_hook);
+				// ff 15 yy yy yy yy	call	dword ptr ds:[popup_easing_menu_hook]
+				popup_easing_menu = sigma_lib::memory::replace_api_call(
+					exedit.call_easing_popup_menu, &popup_easing_menu_hook_addr);
 
 			::SetWindowSubclass(dlg, &setting_dlg_hook, hook_uid(), {});
 		}

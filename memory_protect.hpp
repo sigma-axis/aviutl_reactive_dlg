@@ -88,5 +88,15 @@ namespace sigma_lib::memory
 
 		ProtectHelper::copy(addr, code);
 	}
+
+	// ff 15 xx xx xx xx	// call	dword ptr ds:[xxxxxxxx]
+	// v
+	// ff 15 yy yy yy yy	// call	dword ptr ds:[yyyyyyyy]
+	template<class FuncT>
+	inline FuncT* const* replace_api_call(auto* address, FuncT* const* hook_func_var)
+	{
+		return std::exchange(ProtectHelper{ address, 2 + sizeof(FuncT**) }
+			.as_ref<FuncT* const*>(2), hook_func_var);
+	}
 }
 
