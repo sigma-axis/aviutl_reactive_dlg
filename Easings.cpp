@@ -199,7 +199,7 @@ expt::formatted_values::formatted_values(std::wstring src) : vals{}, section{ -1
 	if (pos_bra_l != nullptr && pos_bra_r != nullptr && idx_bra_r == idx_bra_l + 2)
 		section = idx_bra_l;
 	else if (pos_bra_l == nullptr && pos_bra_r == nullptr && vals.size() == 2)
-		// two-long sequence shall implicitly specify the section unless specified.
+		// two-long sequence shall implicitly specify the section unless explicitly specified.
 		section = 0;
 }
 
