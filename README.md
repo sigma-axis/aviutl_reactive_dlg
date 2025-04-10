@@ -54,7 +54,7 @@
 1.  トラックバーの数値入力ボックスのドラッグ動作をカスタマイズする機能．[[詳細](
   https://github.com/sigma-axis/aviutl_reactive_dlg/wiki/トラックバーのマウス入力関連の機#ドラッグでの移動量を修飾キーや右クリックで調整)]
 
-    \[TODO: demo video\]
+    https://github.com/user-attachments/assets/7162a4b3-fb93-4d4e-81de-b66e1d3e95ce
 
     - `Alt` を押していると増減量が 10 倍に．
     - マウス右ボタンを押している間は「10 ピクセル動くごとに1段階」と階段状の操作ができます．
@@ -91,7 +91,7 @@
 
 1.  トラックバーの時間変化に関する情報をツールチップの形で表示できます．[[詳細](https://github.com/sigma-axis/aviutl_reactive_dlg/wiki/トラックバーの変化方法関連の機能)]
 
-    \[TODO: image\]
+    ![ボタンの上にカーソルを合わせると表示](https://github.com/user-attachments/assets/01d21f31-ddde-4189-a9b5-11233c36c23a)
 
     1.  現在選択中の変化方法を表示．[[詳細](https://github.com/sigma-axis/aviutl_reactive_dlg/wiki/トラックバーの変化方法関連の機能#変化方法に関する情報)]
 
@@ -107,7 +107,7 @@
 
     1.  選択区間内での数値の時間変化をグラフで表示．[[詳細](https://github.com/sigma-axis/aviutl_reactive_dlg/wiki/トラックバーの変化方法関連の機能#時間変化のグラフ)]
 
-        \[TODO: image\]
+        ![ツールチップのグラフ表示](https://github.com/user-attachments/assets/842726f2-faf9-4501-b1f2-64c6f292b47d)
 
     これらは個別に表示・非表示を設定できます．
 
