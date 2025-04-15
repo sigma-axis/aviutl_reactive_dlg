@@ -55,8 +55,7 @@ static struct {
 	// the filter is known to have the specific type of exdata.
 	template<class ExDataT>
 	char const* get(ExEdit::Object const& leader, ExEdit::Object::FilterParam const& filter_param) {
-		ptrdiff_t offset = leader.exdata_offset + filter_param.exdata_offset;
-		auto exdata = reinterpret_cast<ExDataT*>((*exedit.exdata_table) + offset + 0x0004);
+		auto exdata = find_exdata<ExDataT>(leader.exdata_offset, filter_param.exdata_offset);
 		return exdata->name[0] != '\0' ? exdata->name : find(exdata->type);
 	}
 

@@ -65,7 +65,7 @@ struct TrackInfo {
 
 	// smallest distance between pos_v's, representing the heights of the group of trackbar UIs.
 	constexpr static int TrackHeight = 25;
-	constexpr static size_t max_value_len = 8; // assume "-999999.9" is the longest.
+	constexpr static size_t max_value_len = 9; // assume "-999999.9" is the longest.
 };
 static_assert(sizeof(TrackInfo) == 40);
 
@@ -80,6 +80,7 @@ inline constinit struct ExEdit092 {
 	int32_t*	SelectingObjectNum_ptr;		// 0x167d88
 	int32_t*	SelectingObjectIndex;		// 0x179230
 	int32_t*	edit_frame_cursor;			// 0x1a5304
+	int32_t*	current_filter_index;		// 0x14965C
 
 	HWND*		hwnd_setting_dlg;			// 0x1539c8
 	//int32_t*	is_playing;					// 0x1a52ec; 0: editing, 1: playing.
@@ -90,6 +91,15 @@ inline constinit struct ExEdit092 {
 	int32_t*	track_label_is_dragging;	// 0x158d30; 0: idle, 1: dragging.
 	int32_t*	track_label_start_drag_x;	// 0x179218
 	HWND*		hwnd_track_buttons;			// 0x158f68
+
+	HMENU*		hmenu_cxt_visual_obj;		// 0x158d2c
+	/*
+			0x158d2c, // 図形やテキストオブジェクト，グループ制御など．
+			0x158d24, // 音声系オブジェクト．
+			0x167d40, // カメラ制御と時間制御．
+			0x158d20, // 画像系フィルタオブジェクト（シーンチェンジなど）．
+			0x167d44, // 音声系フィルタオブジェクト．
+	*/
 
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
 
@@ -137,6 +147,7 @@ private:
 		pick_addr(SelectingObjectNum_ptr,	0x167d88);
 		pick_addr(SelectingObjectIndex,		0x179230);
 		pick_addr(edit_frame_cursor,		0x1a5304);
+		pick_addr(current_filter_index,		0x14965C);
 
 		pick_addr(hwnd_setting_dlg,			0x1539c8);
 		//pick_addr(is_playing,				0x1a52ec);
@@ -147,6 +158,8 @@ private:
 		pick_addr(track_label_is_dragging,	0x158d30);
 		pick_addr(track_label_start_drag_x,	0x179218);
 		pick_addr(hwnd_track_buttons,		0x158f68);
+
+		pick_addr(hmenu_cxt_visual_obj,		0x158d2c);
 
 		//pick_addr(setting_dlg_wndproc,		0x02cde0);
 
@@ -183,6 +196,12 @@ void update_setting_dialog(int index);
 
 // 編集データの変更でメイン画面を更新．
 void update_current_frame();
+
+template<class ExDataT>
+inline ExDataT* find_exdata(ptrdiff_t obj_exdata_offset, ptrdiff_t filter_exdata_offset) {
+	return reinterpret_cast<ExDataT*>((*exedit.exdata_table)
+		+ obj_exdata_offset + filter_exdata_offset + 0x0004);
+}
 
 namespace filter_id
 {
