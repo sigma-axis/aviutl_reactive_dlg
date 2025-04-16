@@ -280,7 +280,7 @@ static inline std::string compose_obj_effect(ExEdit::Object const& obj, ExEdit::
 					static_cast<size_t>(use->size)
 				};
 				if (auto const pos = str.find_first_of('\0'); pos != str.npos)
-					str = str.substr(pos);
+					str = str.substr(0, pos);
 				put::string(ret, str);
 				break;
 			}
