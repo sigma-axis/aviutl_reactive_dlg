@@ -521,7 +521,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 					(settings.values.is_enabled() && !(
 						obj.index_midpt_leader < 0 || // no mid-points.
 						easing_spec{ mode }.twopoints)) ||
-					(settings.current_value &&
+					(settings.cursor_value &&
 						is_frame_within_chain(*exedit.edit_frame_cursor, obj))) {
 					reinterpret_cast<NMTTDISPINFOA*>(lparam)
 						->lpszText = const_cast<char*>(dummy_text_a);
