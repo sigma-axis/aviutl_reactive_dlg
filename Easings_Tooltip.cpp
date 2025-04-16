@@ -70,6 +70,28 @@ static inline std::wstring format_easing(ExEdit::Object::TrackMode mode, int32_t
 	return ret;
 }
 
+static inline std::wstring format_cursor_value(int val, int denom, int prec) {
+	std::wstring ret = L"現在の値: ";
+	wchar_t buf[std::bit_ceil(TrackInfo::max_value_len + 1)];
+	ret.append(buf, ::swprintf_s(buf, L"%.*f",
+		std::lroundf(std::log10f(static_cast<float>(prec))),
+		static_cast<double>(val) / denom));
+	return ret;
+}
+
+static inline bool is_frame_within_chain(int frame, ExEdit::Object const& obj)
+{
+	int bg, ed;
+	if (auto i = obj.index_midpt_leader; i < 0) { bg = obj.frame_begin; ed = obj.frame_end; }
+	else {
+		auto const* const objects = *exedit.ObjectArray_ptr;
+		bg = objects[i].frame_begin;
+		for (int j; j = exedit.NextObjectIdxArray[i], j >= 0; i = j);
+		ed = objects[i].frame_end;
+	}
+	return bg <= frame && frame <= ed;
+}
+
 // multiplies the resolution of logical coordinates for screens with high DPI.
 template<size_t scale_num, size_t scale_den = 1>
 class rescale_dc {
@@ -123,9 +145,9 @@ constinit
 static struct tooltip_content {
 	int width, height;
 
-	std::wstring easing, values;
+	std::wstring easing, curr_value, midpt_values;
 	section_graph graph;
-	int pos_y_values, pos_x_graph;
+	int pos_y_curr_value, pos_y_midpt_values, pos_x_graph;
 
 	inline void measure(size_t index, HDC hdc);
 	inline void draw(HDC dc, RECT const& rc) const;
@@ -135,6 +157,7 @@ static struct tooltip_content {
 private:
 	constexpr static int
 		margin_r_easing = 8,
+		margin_t_current = 4,
 		margin_b_easing = 4, margin_b_graph = 4;
 	constexpr static UINT draw_text_options = DT_NOCLIP | DT_NOPREFIX;
 
@@ -309,14 +332,35 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 	// the name and desc of the easing.
 	if (settings.mode) easing = format_easing(mode, obj.track_param[index], name_spec);
 
+	// the calculated value at the frame cursor.
+	if (settings.cursor_value) {
+		int const curr_frame = *exedit.edit_frame_cursor;
+		if (!is_frame_within_chain(curr_frame, obj)) curr_value = L"";
+		else {
+			auto const* const objects = *exedit.ObjectArray_ptr;
+			ExEdit::Object const* sect = &obj;
+			for (int i = obj.index_midpt_leader;
+				i >= 0 && objects[i].frame_end > curr_frame;
+				sect = &objects[i], i = exedit.NextObjectIdxArray[i]);
+
+			auto const [filter_index, rel_idx] = find_filter_from_track(*sect, index);
+			size_t const sect_index = sect - objects;
+			auto const ofi = object_filter_index(sect_index, filter_index);
+			char* const arg_name = reinterpret_cast<char*>(1 + rel_idx); // represents the trackbar index.
+
+			int val; exedit.calc_trackbar(ofi, curr_frame, 0, &val, arg_name);
+			curr_value = format_cursor_value(val, track_info.denominator(), track_info.precision());
+		}
+	}
+
 	// values at each midpoint.
 	if (settings.values.is_enabled()) {
 		if (obj.index_midpt_leader < 0 || // no mid-points.
 			name_spec.spec.twopoints)
-			values = L"";
+			midpt_values = L"";
 		else {
 			auto const vals = formatted_values{ obj, index };
-			values = vals.span().trim_from_sect(
+			midpt_values = vals.span().trim_from_sect(
 				settings.values.left < 0 ? vals.size() : settings.values.left,
 				settings.values.right < 0 ? vals.size() : settings.values.right)
 				.to_string(track_info.precision(), true, true, settings.values.zigzag);
@@ -328,20 +372,30 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 		graph.plot(obj, index, track_info.denominator());
 
 	// measure those text.
-	RECT rc1{}, rc2{};
+	RECT rc1{}, rc2{}, rc3{};
 	if (!easing.empty())
 		::DrawTextW(hdc, easing.c_str(), easing.size(),
 			&rc1, DT_CALCRECT | draw_text_options);
-	if (!values.empty())
-		::DrawTextW(hdc, values.c_str(), values.size(),
+	if (!curr_value.empty())
+		::DrawTextW(hdc, curr_value.c_str(), curr_value.size(),
 			&rc2, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
+	if (!midpt_values.empty())
+		::DrawTextW(hdc, midpt_values.c_str(), midpt_values.size(),
+			&rc3, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
 
 	// layout the contents and detemine the size.
-	int const
-		w_ease = rc1.right - rc1.left, h_ease = rc1.bottom - rc1.top,
-		w_vals = rc2.right - rc2.left, h_vals = rc2.bottom - rc2.top;
+	int w_ease = rc1.right - rc1.left, h_ease = rc1.bottom - rc1.top,
+		w_curr = rc2.right - rc2.left, h_curr = rc2.bottom - rc2.top,
+		w_vals = rc3.right - rc3.left, h_vals = rc3.bottom - rc3.top;
+	if (!curr_value.empty()) {
+		// recognize *_curr being a part of *_ease.
+		pos_y_curr_value = easing.empty() ? 0 : h_ease + margin_t_current;
+		w_ease = std::max(w_ease, w_curr);
+		h_ease = pos_y_curr_value + h_curr;
+	}
+
 	if (w_ease < w_vals) {
-		if (!easing.empty() && !graph.empty()) {
+		if (w_ease > 0 && !graph.empty()) {
 			pos_x_graph = std::min(
 				std::max(w_ease + margin_r_easing, w_vals - settings.graph.width),
 				w_ease + (settings.graph.width >> 1)); // gap at most half width of the graph.
@@ -352,40 +406,40 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 			width = std::max(w_vals, graph.empty() ? 0 : settings.graph.width);
 		}
 
-		if (easing.empty() && graph.empty()) {
-			pos_y_values = 0;
+		if (w_ease <= 0 && graph.empty()) {
+			pos_y_midpt_values = 0;
 			height = h_vals;
 		}
 		else {
-			pos_y_values = std::max(
-				easing.empty() ? 0 : h_ease + margin_b_easing,
+			pos_y_midpt_values = std::max(
+				w_ease <= 0 ? 0 : h_ease + margin_b_easing,
 				graph.empty() ? 0 : settings.graph.height + margin_b_graph);
-			height = pos_y_values + h_vals;
+			height = pos_y_midpt_values + h_vals;
 		}
 	}
 	else {
-		if (easing.empty() && values.empty()) {
+		if (w_ease <= 0 && w_vals <= 0) {
 			pos_x_graph = 0;
 			width = settings.graph.width;
 		}
 		else {
 			pos_x_graph = std::max(
-				easing.empty() ? 0 : w_ease + margin_r_easing,
-				values.empty() ? 0 : w_vals + margin_r_easing);
+				w_ease <= 0 ? 0 : w_ease + margin_r_easing,
+				w_vals <= 0 ? 0 : w_vals + margin_r_easing);
 			width = graph.empty() ? w_ease : pos_x_graph + settings.graph.width;
 		}
 
-		if (!easing.empty() && !values.empty()) {
+		if (w_ease > 0 && w_vals > 0) {
 			height = std::max(
 				h_ease + margin_b_easing + h_vals,
 				graph.empty() ? 0 : settings.graph.height);
-			pos_y_values = height - h_vals;
+			pos_y_midpt_values = height - h_vals;
 		}
 		else {
-			pos_y_values = 0;
+			pos_y_midpt_values = 0;
 			height = std::max(std::max(
-				easing.empty() ? 0 : h_ease,
-				values.empty() ? 0 : h_vals),
+				w_ease <= 0 ? 0 : h_ease,
+				w_vals <= 0 ? 0 : h_vals),
 				graph.empty() ? 0 : settings.graph.height);
 		}
 	}
@@ -401,15 +455,21 @@ inline void tooltip_content::draw(HDC dc, RECT const& rc) const
 
 	// actual drawing, using content.easing and content.values.
 	if (!easing.empty()) {
-		RECT rc_easing = rc;
+		RECT rc2 = rc;
 		::DrawTextW(dc, easing.c_str(), easing.size(),
-			&rc_easing, draw_text_options);
+			&rc2, draw_text_options);
 	}
-	if (!values.empty()) {
-		RECT rc_vals = rc;
-		rc_vals.top += pos_y_values;
-		::DrawTextW(dc, values.c_str(), values.size(),
-			&rc_vals, draw_text_options | DT_SINGLELINE);
+	if (!curr_value.empty()) {
+		RECT rc2 = rc;
+		rc2.top += pos_y_curr_value;
+		::DrawTextW(dc, curr_value.c_str(), curr_value.size(),
+			&rc2, draw_text_options | DT_SINGLELINE);
+	}
+	if (!midpt_values.empty()) {
+		RECT rc2 = rc;
+		rc2.top += pos_y_midpt_values;
+		::DrawTextW(dc, midpt_values.c_str(), midpt_values.size(),
+			&rc2, draw_text_options | DT_SINGLELINE);
 	}
 
 	if (!graph.empty()) {
@@ -460,7 +520,9 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				if (settings.mode || settings.graph.enabled ||
 					(settings.values.is_enabled() && !(
 						obj.index_midpt_leader < 0 || // no mid-points.
-						easing_spec{ mode }.twopoints))) {
+						easing_spec{ mode }.twopoints)) ||
+					(settings.current_value &&
+						is_frame_within_chain(*exedit.edit_frame_cursor, obj))) {
 					reinterpret_cast<NMTTDISPINFOA*>(lparam)
 						->lpszText = const_cast<char*>(dummy_text_a);
 					content.invalidate();
@@ -595,6 +657,7 @@ void expt::Settings::load(char const* ini_file)
 		constexpr int min_time = 0, max_time = 60'000;
 
 		read(bool,,	mode);
+		read(bool,, cursor_value);
 		read(int,,	values.left,	min_vals, max_vals);
 		read(int,,	values.right,	min_vals, max_vals);
 		read(bool,,	values.zigzag);

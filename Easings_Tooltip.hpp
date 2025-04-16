@@ -26,6 +26,7 @@ namespace reactive_dlg::Easings::Tooltip
 {
 	inline constinit struct Settings {
 		bool mode = true;
+		bool cursor_value = true;
 		struct {
 			int8_t left, right;
 			bool zigzag;
@@ -52,7 +53,7 @@ namespace reactive_dlg::Easings::Tooltip
 
 		void load(char const* ini_file);
 		bool is_enabled() const {
-			return mode || values.is_enabled() || graph.enabled;
+			return mode || cursor_value || values.is_enabled() || graph.enabled;
 		}
 	} settings;
 

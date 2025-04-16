@@ -55,6 +55,8 @@ namespace sigma_lib::inifile
 		std::string str(max_len, '\0');
 		auto const len = ::GetPrivateProfileStringA(section, key, reinterpret_cast<char const*>(def), str.data(), str.length(), ini);
 		str.erase(len);
-		return sigma_lib::string::encode_utf8::to_wide_str(str);
+		auto ret = sigma_lib::string::encode_utf8::to_wide_str(str);
+		ret.shrink_to_fit();
+		return ret;
 	}
 }

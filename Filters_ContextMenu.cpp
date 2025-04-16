@@ -190,7 +190,7 @@ namespace lua_code
 			s.append("\"");
 		}
 
-		static inline void comma(std::string& s) { s.append(", "); }
+		static inline void comma(std::string& s) { s.append(","); }
 	}
 }
 
