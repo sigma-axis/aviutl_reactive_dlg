@@ -44,6 +44,7 @@ NS_BEGIN()
 using namespace reactive_dlg::Easings;
 using namespace reactive_dlg::Easings::Tooltip;
 namespace common = reactive_dlg::Tooltip;
+using common::tooltip, common::bgr2rgb;
 
 static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&settings); }
 
@@ -149,7 +150,7 @@ static struct tooltip_content {
 	section_graph graph;
 	int pos_y_curr_value, pos_y_midpt_values, pos_x_graph;
 
-	inline void measure(size_t index, HDC hdc);
+	inline void measure(size_t index, HDC dc);
 	inline void draw(HDC dc, RECT const& rc) const;
 	constexpr bool is_valid() const { return width > 0 && height > 0; }
 	void invalidate() { width = height = 0; }
@@ -162,11 +163,6 @@ private:
 	constexpr static UINT draw_text_options = DT_NOCLIP | DT_NOPREFIX;
 
 } content{};
-
-// color conversion.
-constexpr auto bgr2rgb(int32_t c) {
-	return (std::rotl<uint32_t>(c, 16) & 0x00ff00ff) | (c & 0x0000ff00);
-}
 
 static inline constinit struct graph_pen {
 	constexpr operator bool() const { return pen != nullptr; }
@@ -320,7 +316,7 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 	::SelectObject(dc, old_pen);
 }
 
-inline void tooltip_content::measure(size_t index, HDC hdc)
+inline void tooltip_content::measure(size_t index, HDC dc)
 {
 	if (is_valid()) return;
 
@@ -378,13 +374,13 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 	// measure those text.
 	RECT rc1{}, rc2{}, rc3{};
 	if (!easing.empty())
-		::DrawTextW(hdc, easing.c_str(), easing.size(),
+		::DrawTextW(dc, easing.c_str(), easing.size(),
 			&rc1, DT_CALCRECT | draw_text_options);
 	if (!curr_value.empty())
-		::DrawTextW(hdc, curr_value.c_str(), curr_value.size(),
+		::DrawTextW(dc, curr_value.c_str(), curr_value.size(),
 			&rc2, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
 	if (!midpt_values.empty())
-		::DrawTextW(hdc, midpt_values.c_str(), midpt_values.size(),
+		::DrawTextW(dc, midpt_values.c_str(), midpt_values.size(),
 			&rc3, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
 
 	// layout the contents and detemine the size.
@@ -502,13 +498,13 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 	{
 		// relayed messages.
 		MSG msg{ .hwnd = hwnd, .message = message, .wParam = wparam, .lParam = lparam };
-		::SendMessageW(common::tooltip, TTM_RELAYEVENT,
+		::SendMessageW(tooltip, TTM_RELAYEVENT,
 			message == WM_MOUSEMOVE ? ::GetMessageExtraInfo() : 0, reinterpret_cast<LPARAM>(&msg));
 		break;
 	}
 
 	case WM_NOTIFY:
-		if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == common::tooltip) {
+		if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == tooltip) {
 			constexpr auto dummy_text_a = "\t";
 			constexpr auto dummy_text_w = L"\t";
 
@@ -520,7 +516,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				size_t idx = static_cast<size_t>(data);
 				auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
 				auto const& mode = obj.track_mode[idx];
-				if ((mode.num & 0x0f) == 0) break; // 移動無し
+				if ((mode.num & 0x0f) == 0) return {}; // 移動無し
 				if (settings.mode || settings.graph.enabled ||
 					(settings.values.is_enabled() && !(
 						obj.index_midpt_leader < 0 || // no mid-points.
@@ -531,22 +527,22 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 						->lpszText = const_cast<char*>(dummy_text_a);
 					content.invalidate();
 				}
-				break;
+				return {};
 			}
 			case TTN_SHOW:
 			{
 				// adjust the tooltip size to fit with the content.
 				RECT rc;
-				::GetWindowRect(common::tooltip, &rc);
-				::SendMessageW(common::tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
+				::GetWindowRect(tooltip, &rc);
+				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
 				rc.right = rc.left + content.width + 2; // add slight extra space on the right and bottom.
 				rc.bottom = rc.top + content.height + 1;
-				::SendMessageW(common::tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
+				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
 
 				// adjust the position not to clip edges of screens.
 				rc = sigma_lib::W32::monitor<true>{ rc.left, rc.top }
 				.expand(-8).clamp(rc); // 8 pixels of padding.
-				::SetWindowPos(common::tooltip, nullptr, rc.left, rc.top,
+				::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
 					rc.right - rc.left, rc.bottom - rc.top,
 					SWP_NOZORDER | SWP_NOACTIVATE);
 				return TRUE;
@@ -562,7 +558,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 					content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
 
 					// actual drawing is done on the CDDS_POSTPAINT notification.
-					if (::IsWindowVisible(common::tooltip) != FALSE)
+					if (::IsWindowVisible(tooltip) != FALSE)
 						return CDRF_NOTIFYPOSTPAINT;
 
 					// if the tooltip window is invisible, it's measuring its own size,
@@ -573,7 +569,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 					//::DrawTextW(dhdr->nmcd.hdc, dummy_text_w, 1, &margin, dhdr->uDrawFlags | DT_CALCRECT);
 					//margin.right = content.width - margin.right + 1; // slight extra space on the right.
 					//margin.bottom = content.height - margin.bottom;
-					//::SendMessageW(common::tooltip, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
+					//::SendMessageW(tooltip, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
 
 					// NOTE: when visual style is applied, the margin has no effect.
 					break;
@@ -615,12 +611,9 @@ bool expt::setup(HWND hwnd, bool initializing)
 			};
 			for (size_t i = 0; i < ExEdit::Object::MAX_TRACK; i++) {
 				HWND tgt = exedit.hwnd_track_buttons[i];
-
-				ti.hwnd = tgt;
-				ti.uId = reinterpret_cast<uintptr_t>(tgt);
-
-				::SendMessageW(common::tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
-				::SetWindowSubclass(tgt, &param_button_hook, hook_uid(), { i });
+				ti.uId = reinterpret_cast<uintptr_t>(ti.hwnd = tgt);
+				::SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
+				::SetWindowSubclass(ti.hwnd, &param_button_hook, hook_uid(), { i });
 			}
 		}
 		else {

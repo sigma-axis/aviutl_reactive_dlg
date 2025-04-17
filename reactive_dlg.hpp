@@ -85,7 +85,7 @@ inline constinit struct ExEdit092 {
 	HWND*		hwnd_setting_dlg;			// 0x1539c8
 	//int32_t*	is_playing;					// 0x1a52ec; 0: editing, 1: playing.
 	HWND*		hwnd_edit_text;				// 0x236328
-	HWND*		hwnd_edit_script;			// 0x230C78
+	HWND*		hwnd_edit_script;			// 0x230c78
 	TrackInfo*	trackinfo_left;				// 0x14d4c8
 	TrackInfo*	trackinfo_right;			// 0x14def0
 	int32_t*	track_label_is_dragging;	// 0x158d30; 0: idle, 1: dragging.
@@ -105,6 +105,7 @@ inline constinit struct ExEdit092 {
 
 	HWND*		filter_checkboxes;			// 0x14d368
 	HWND*		filter_separators;			// 0x1790d8
+	HWND*		filter_expanders;			// 0x178fcc
 	uintptr_t*	exdata_table;				// 0x1e0fa8
 	char const*	basic_scene_change_names;	// 0x0aef38
 	char const*	basic_animation_names;		// 0x0c1f08
@@ -152,7 +153,7 @@ private:
 		pick_addr(hwnd_setting_dlg,			0x1539c8);
 		//pick_addr(is_playing,				0x1a52ec);
 		pick_addr(hwnd_edit_text,			0x236328);
-		pick_addr(hwnd_edit_script,			0x230C78);
+		pick_addr(hwnd_edit_script,			0x230c78);
 		pick_addr(trackinfo_left,			0x14d4c8);
 		pick_addr(trackinfo_right,			0x14def0);
 		pick_addr(track_label_is_dragging,	0x158d30);
@@ -165,6 +166,7 @@ private:
 
 		pick_addr(filter_checkboxes,		0x14d368);
 		pick_addr(filter_separators,		0x1790d8);
+		pick_addr(filter_expanders,			0x178fcc);
 		pick_addr(exdata_table,				0x1e0fa8);
 		pick_addr(basic_scene_change_names,	0x0aef38);
 		pick_addr(basic_animation_names,	0x0c1f08);

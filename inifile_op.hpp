@@ -15,7 +15,6 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <cstdint>
 #include <algorithm>
 #include <bit>
-#include <concepts>
 #include <string>
 
 #define NOMINMAX
@@ -31,12 +30,12 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 ////////////////////////////////
 namespace sigma_lib::inifile
 {
-	inline auto read_ini_int(std::convertible_to<int32_t> auto def, char const* ini, char const* section, char const* key)
+	inline auto read_ini_int(auto def, char const* ini, char const* section, char const* key)
 	{
 		return static_cast<decltype(def)>(
 			::GetPrivateProfileIntA(section, key, static_cast<int32_t>(def), ini));
 	}
-	inline auto read_ini_int(std::convertible_to<int32_t> auto def, char const* ini, char const* section, char const* key,
+	inline auto read_ini_int(auto def, char const* ini, char const* section, char const* key,
 		int32_t min, int32_t max) {
 		return static_cast<decltype(def)>(std::clamp(read_ini_int(static_cast<int32_t>(def), ini, section, key), min, max));
 	}

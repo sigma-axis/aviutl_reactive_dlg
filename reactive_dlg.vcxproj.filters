@@ -78,6 +78,9 @@
     <ClInclude Include="Tooltip.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Filters_Tooltip.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="reactive_dlg.cpp">
@@ -120,6 +123,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Tooltip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Filters_Tooltip.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

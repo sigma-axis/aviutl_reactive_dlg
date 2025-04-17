@@ -18,19 +18,21 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-using byte = uint8_t;
-#include <exedit.hpp>
-
 
 ////////////////////////////////
-// ツールチップの共有管理．
+// フィルタのツールチップ表示．
 ////////////////////////////////
-namespace reactive_dlg::Tooltip
+namespace reactive_dlg::Filters::Tooltip
 {
 	inline constinit struct Settings {
-		bool animation = true;
-		uint16_t delay = 340, duration = 10000;
-		int32_t text_color = -1;
+		bool enabled = true;
+		enum class trackbar_level : uint8_t {
+			none = 0,
+			moving = 1,
+			all = 2,
+		} trackbars = trackbar_level::all;
+		bool checks = true;
+		bool exdata = true;
 
 		void load(char const* ini_file);
 	} settings;
@@ -38,13 +40,6 @@ namespace reactive_dlg::Tooltip
 	/// starts or terminates the functinality.
 	/// @param hwnd the handle to the window of this plugin.
 	/// @param initializing `true` when hooking, `false` when unhooking.
-	/// @param module_id currently unused.
 	/// @return `true` when hook/unhook was necessary and successfully done, `false` otherwise.
-	bool setup(HWND hwnd, bool initializing, [[maybe_unused]] uint32_t module_id);
-	inline constinit HWND tooltip = nullptr;
-
-	// color conversion.
-	constexpr auto bgr2rgb(int32_t c) {
-		return (std::rotl<uint32_t>(c, 16) & 0x00ff00ff) | (c & 0x0000ff00);
-	}
+	bool setup(HWND hwnd, bool initializing);
 }
