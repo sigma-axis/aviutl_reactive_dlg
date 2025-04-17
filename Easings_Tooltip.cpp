@@ -29,6 +29,7 @@ using byte = uint8_t;
 #include "monitors.hpp"
 
 #include "reactive_dlg.hpp"
+#include "Tooltip.hpp"
 #include "Easings.hpp"
 #include "Easings_Tooltip.hpp"
 
@@ -42,10 +43,9 @@ NS_BEGIN()
 ////////////////////////////////
 using namespace reactive_dlg::Easings;
 using namespace reactive_dlg::Easings::Tooltip;
+namespace common = reactive_dlg::Tooltip;
 
 static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&settings); }
-
-static constinit HWND tooltip = nullptr;
 
 // formatting a string that describes to the track mode.
 static inline std::wstring format_easing(ExEdit::Object::TrackMode mode, int32_t param, easing_name_spec const& name_spec)
@@ -454,8 +454,8 @@ inline void tooltip_content::draw(HDC dc, RECT const& rc) const
 	if (!is_valid()) return;
 
 	// change the text color if specified.
-	if (settings.text_color >= 0)
-		::SetTextColor(dc, bgr2rgb(settings.text_color));
+	if (common::settings.text_color >= 0)
+		::SetTextColor(dc, bgr2rgb(common::settings.text_color));
 
 	// actual drawing, using content.easing and content.values.
 	if (!easing.empty()) {
@@ -502,13 +502,13 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 	{
 		// relayed messages.
 		MSG msg{ .hwnd = hwnd, .message = message, .wParam = wparam, .lParam = lparam };
-		::SendMessageW(tooltip, TTM_RELAYEVENT,
+		::SendMessageW(common::tooltip, TTM_RELAYEVENT,
 			message == WM_MOUSEMOVE ? ::GetMessageExtraInfo() : 0, reinterpret_cast<LPARAM>(&msg));
 		break;
 	}
 
 	case WM_NOTIFY:
-		if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == tooltip) {
+		if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == common::tooltip) {
 			constexpr auto dummy_text_a = "\t";
 			constexpr auto dummy_text_w = L"\t";
 
@@ -537,16 +537,16 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 			{
 				// adjust the tooltip size to fit with the content.
 				RECT rc;
-				::GetWindowRect(tooltip, &rc);
-				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
+				::GetWindowRect(common::tooltip, &rc);
+				::SendMessageW(common::tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
 				rc.right = rc.left + content.width + 2; // add slight extra space on the right and bottom.
 				rc.bottom = rc.top + content.height + 1;
-				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
+				::SendMessageW(common::tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
 
 				// adjust the position not to clip edges of screens.
 				rc = sigma_lib::W32::monitor<true>{ rc.left, rc.top }
-					.expand(-8).clamp(rc); // 8 pixels of padding.
-				::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
+				.expand(-8).clamp(rc); // 8 pixels of padding.
+				::SetWindowPos(common::tooltip, nullptr, rc.left, rc.top,
 					rc.right - rc.left, rc.bottom - rc.top,
 					SWP_NOZORDER | SWP_NOACTIVATE);
 				return TRUE;
@@ -562,7 +562,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 					content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
 
 					// actual drawing is done on the CDDS_POSTPAINT notification.
-					if (::IsWindowVisible(tooltip) != FALSE)
+					if (::IsWindowVisible(common::tooltip) != FALSE)
 						return CDRF_NOTIFYPOSTPAINT;
 
 					// if the tooltip window is invisible, it's measuring its own size,
@@ -573,7 +573,7 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 					//::DrawTextW(dhdr->nmcd.hdc, dummy_text_w, 1, &margin, dhdr->uDrawFlags | DT_CALCRECT);
 					//margin.right = content.width - margin.right + 1; // slight extra space on the right.
 					//margin.bottom = content.height - margin.bottom;
-					//::SendMessageW(tooltip, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
+					//::SendMessageW(common::tooltip, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
 
 					// NOTE: when visual style is applied, the margin has no effect.
 					break;
@@ -604,17 +604,8 @@ namespace expt = reactive_dlg::Easings::Tooltip;
 bool expt::setup(HWND hwnd, bool initializing)
 {
 	if (settings.is_enabled()) {
+		common::setup(hwnd, initializing, hook_uid());
 		if (initializing) {
-			// create the tooltip window.
-			tooltip = ::CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
-				WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP |
-				(settings.animation ? TTS_NOFADE | TTS_NOANIMATE : 0),
-				CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-				hwnd, nullptr, exedit.fp->hinst_parent, nullptr);
-
-			::SetWindowPos(tooltip, HWND_TOPMOST, 0, 0, 0, 0,
-				SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
 			// associate the tooltip with each trackbar button.
 			TTTOOLINFOW ti{
 				.cbSize = TTTOOLINFOW_V1_SIZE,
@@ -628,19 +619,11 @@ bool expt::setup(HWND hwnd, bool initializing)
 				ti.hwnd = tgt;
 				ti.uId = reinterpret_cast<uintptr_t>(tgt);
 
-				::SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
+				::SendMessageW(common::tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
 				::SetWindowSubclass(tgt, &param_button_hook, hook_uid(), { i });
 			}
-
-			// settings of delay time for the tooltip.
-			::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_INITIAL,	0xffff & settings.delay);
-			::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_AUTOPOP,	0xffff & settings.duration);
-			::SendMessageW(tooltip, TTM_SETDELAYTIME, TTDT_RESHOW,	0xffff & (settings.delay / 5));
-			// initial values are... TTDT_INITIAL: 340, TTDT_AUTOPOP: 3400, TTDT_RESHOW: 68.
 		}
 		else {
-			::DestroyWindow(tooltip);
-			tooltip = nullptr;
 			graph_pen.delete_object();
 		}
 		return true;
@@ -660,7 +643,6 @@ void expt::Settings::load(char const* ini_file)
 	{
 		constexpr auto section = "Easings.Tooltip";
 		constexpr int min_vals = -1, max_vals = 100;
-		constexpr int min_time = 0, max_time = 60'000;
 
 		read(bool,,	mode);
 		read(bool,, cursor_value);
@@ -670,11 +652,6 @@ void expt::Settings::load(char const* ini_file)
 		read_s(values.arrow_up);
 		read_s(values.arrow_down);
 		read_s(values.ellipsis);
-
-		read(bool,,	animation);
-		read(int,,	delay,		min_time, max_time);
-		read(int,,	duration,	min_time, max_time);
-		read(int,,	text_color, -1, max_color);
 	}
 	{
 		constexpr auto section = "Easings.Tooltip.Graph";

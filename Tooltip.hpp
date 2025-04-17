@@ -13,51 +13,33 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #pragma once
 
 #include <cstdint>
-#include <memory>
-#include <string>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
+using byte = uint8_t;
+#include <exedit.hpp>
+
 
 ////////////////////////////////
-// 変化方法のツールチップ表示．
+// ツールチップの共有管理．
 ////////////////////////////////
-namespace reactive_dlg::Easings::Tooltip
+namespace reactive_dlg::Tooltip
 {
 	inline constinit struct Settings {
-		bool mode = true;
-		bool cursor_value = true;
-		struct {
-			int8_t left, right;
-			std::unique_ptr<std::wstring> arrow_flat, arrow_up, arrow_down, ellipsis;
-			bool is_enabled() const { return left != 0 || right != 0; }
-		} values{ 5, 5, nullptr, nullptr, nullptr };
-
-		struct {
-			bool enabled;
-			int16_t width, height;
-			uint16_t polls, curve_width;
-			uint32_t curve_color, cursor_color,
-				line_color_1, line_color_2, line_color_3;
-
-			constexpr static size_t pixel_scale = 256;
-		} graph {
-			true, 64, 64, 17, 384,
-			0xff0000, 0x00ffff,
-			0x000000, 0x808080, 0xc0c0c0,
-		};
+		bool animation = true;
+		uint16_t delay = 340, duration = 10000;
+		int32_t text_color = -1;
 
 		void load(char const* ini_file);
-		bool is_enabled() const {
-			return mode || cursor_value || values.is_enabled() || graph.enabled;
-		}
 	} settings;
 
 	/// starts or terminates the functinality.
 	/// @param hwnd the handle to the window of this plugin.
 	/// @param initializing `true` when hooking, `false` when unhooking.
+	/// @param module_id currently unused.
 	/// @return `true` when hook/unhook was necessary and successfully done, `false` otherwise.
-	bool setup(HWND hwnd, bool initializing);
+	bool setup(HWND hwnd, bool initializing, [[maybe_unused]] uint32_t module_id);
+	inline constinit HWND tooltip = nullptr;
 }

@@ -30,6 +30,7 @@ using byte = uint8_t;
 #include "Track_Keyboard.hpp"
 #include "Track_Mouse.hpp"
 #include "Track_Button.hpp"
+#include "Tooltip.hpp"
 #include "Filters_ScriptName.hpp"
 #include "Filters_ContextMenu.hpp"
 #include "Easings_Misc.hpp"
@@ -196,6 +197,7 @@ BOOL func_init(AviUtl::FilterPlugin* fp)
 	Track::Keyboard::		settings.load(ini_file);
 	Track::Mouse::			settings.load(ini_file);
 	Track::Button::			settings.load(ini_file);
+	Tooltip::				settings.load(ini_file);
 	Filters::ContextMenu::	settings.load(ini_file);
 	Filters::ScriptName::	settings.load(ini_file);
 	Easings::Misc::			settings.load(ini_file);

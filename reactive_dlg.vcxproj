@@ -117,6 +117,7 @@
     <ClInclude Include="slim_formatter.hpp" />
     <ClInclude Include="str_encodes.hpp" />
     <ClInclude Include="TextBox.hpp" />
+    <ClInclude Include="Tooltip.hpp" />
     <ClInclude Include="TrackLabel.hpp" />
     <ClInclude Include="Track_Button.hpp" />
     <ClInclude Include="Track_Keyboard.hpp" />
@@ -132,6 +133,7 @@
     <ClCompile Include="Filters_ScriptName.cpp" />
     <ClCompile Include="reactive_dlg.cpp" />
     <ClCompile Include="TextBox.cpp" />
+    <ClCompile Include="Tooltip.cpp" />
     <ClCompile Include="TrackLabel.cpp" />
     <ClCompile Include="Track_Button.cpp" />
     <ClCompile Include="Track_Keyboard.cpp" />
