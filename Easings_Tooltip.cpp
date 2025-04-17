@@ -324,7 +324,9 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 {
 	if (is_valid()) return;
 
-	auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
+	int const obj_index = *exedit.SettingDialogObjectIndex;
+	auto const* const objects = *exedit.ObjectArray_ptr;
+	auto const& obj = objects[obj_index];
 	auto const& mode = obj.track_mode[index];
 	auto const& track_info = exedit.trackinfo_left[index];
 	easing_name_spec const name_spec{ mode };
@@ -337,18 +339,14 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 		int const curr_frame = *exedit.edit_frame_cursor;
 		if (!is_frame_within_chain(curr_frame, obj)) curr_value = L"";
 		else {
-			auto const* const objects = *exedit.ObjectArray_ptr;
-			ExEdit::Object const* sect = &obj;
+			size_t sect_index = obj_index;
 			for (int i = obj.index_midpt_leader;
-				i >= 0 && objects[i].frame_end > curr_frame;
-				sect = &objects[i], i = exedit.NextObjectIdxArray[i]);
+				i >= 0 && curr_frame <= objects[i].frame_end;
+				sect_index = std::exchange(i, exedit.NextObjectIdxArray[i]));
 
-			auto const [filter_index, rel_idx] = find_filter_from_track(*sect, index);
-			size_t const sect_index = sect - objects;
-			auto const ofi = object_filter_index(sect_index, filter_index);
-			char* const arg_name = reinterpret_cast<char*>(1 + rel_idx); // represents the trackbar index.
-
-			int val; exedit.calc_trackbar(ofi, curr_frame, 0, &val, arg_name);
+			auto const [filter_index, rel_idx] = find_filter_from_track(objects[sect_index], index);
+			int val; exedit.calc_trackbar(object_filter_index(sect_index, filter_index),
+				curr_frame, 0, &val, reinterpret_cast<char*>(1 + rel_idx));
 			curr_value = format_cursor_value(val, track_info.denominator(), track_info.precision());
 		}
 	}
