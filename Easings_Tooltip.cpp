@@ -358,10 +358,16 @@ inline void tooltip_content::measure(size_t index, HDC hdc)
 			midpt_values = L"";
 		else {
 			auto const vals = formatted_values{ obj, index };
+			formatted_valuespan::to_string_seps seps{
+				.flat = settings.values.arrow_flat ? *settings.values.arrow_flat : formatted_valuespan::to_string_seps::arrow_flat,
+				.overflow = settings.values.ellipsis ? *settings.values.ellipsis : formatted_valuespan::to_string_seps::ellipsis,
+			};
+			seps.up = settings.values.arrow_up ? *settings.values.arrow_up : seps.flat;
+			seps.down = settings.values.arrow_down ? *settings.values.arrow_down : seps.flat;
 			midpt_values = vals.span().trim_from_sect(
 				settings.values.left < 0 ? vals.size() : settings.values.left,
 				settings.values.right < 0 ? vals.size() : settings.values.right)
-				.to_string(track_info.precision(), true, true, settings.values.zigzag);
+				.to_string(track_info.precision(), true, true, seps);
 		}
 	}
 
@@ -646,8 +652,10 @@ void expt::Settings::load(char const* ini_file)
 {
 	using namespace sigma_lib::inifile;
 	constexpr int min_color = 0x000000, max_color = 0xffffff;
+	constexpr size_t max_str_len = 31;
 
 #define read(func, hd, fld, ...)	hd fld = read_ini_##func(hd fld, ini_file, section, #fld __VA_OPT__(,) __VA_ARGS__)
+#define read_s(fld)	if (auto s = read_ini_string(u8"", ini_file, section, #fld, max_str_len); s != L"") fld = std::make_unique<std::wstring>(std::move(s))
 
 	{
 		constexpr auto section = "Easings.Tooltip";
@@ -658,7 +666,10 @@ void expt::Settings::load(char const* ini_file)
 		read(bool,, cursor_value);
 		read(int,,	values.left,	min_vals, max_vals);
 		read(int,,	values.right,	min_vals, max_vals);
-		read(bool,,	values.zigzag);
+		read_s(values.arrow_flat);
+		read_s(values.arrow_up);
+		read_s(values.arrow_down);
+		read_s(values.ellipsis);
 
 		read(bool,,	animation);
 		read(int,,	delay,		min_time, max_time);
@@ -684,5 +695,6 @@ void expt::Settings::load(char const* ini_file)
 		read(int, graph., line_color_3,	min_color, max_color);
 	}
 
+#undef read_s
 #undef read
 }

@@ -295,7 +295,7 @@ void expt::Settings::load(char const* ini_file)
 
 #undef read
 
-	constexpr size_t max_replace_tab_length = 256;
+	constexpr size_t max_replace_tab_length = 255;
 	constexpr auto def_tab = L"\t";
 	constexpr auto def_tab_u8 = u8"\t";
 	auto s = read_ini_string(def_tab_u8, ini_file, section, "replace_tab_text", max_replace_tab_length);

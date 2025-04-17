@@ -83,6 +83,15 @@ namespace reactive_dlg::Easings
 
 	// copy-paste formatting, adjusted for displaying.
 	struct formatted_valuespan {
+		struct to_string_seps {
+			std::wstring_view flat, up, down, overflow;
+			constexpr static std::wstring_view
+				arrow_flat	= L"\u2192", // Rightwards Arrow.
+				arrow_up	= L"\u2197", // North East Arrow.
+				arrow_down	= L"\u2198", // South East Arrow.
+				ellipsis	= L"\u2026"; // Horizontal Ellipsis.
+		};
+
 		std::span<double const> values;
 		int section;
 		bool more_l, more_r;
@@ -94,7 +103,13 @@ namespace reactive_dlg::Easings
 		constexpr void discard_section() { section = -2; }
 
 		// formats a string that lists up the transition of values.
-		std::wstring to_string(int prec, bool ellip_l, bool ellip_r, bool zigzag) const;
+		std::wstring to_string(int prec, bool overflow_l, bool overflow_r, to_string_seps const& seps) const;
+		std::wstring to_string(int prec, bool overflow_l, bool overflow_r) const {
+			return to_string(prec, overflow_l, overflow_r, to_string_seps::arrow_flat);
+		}
+		std::wstring to_string(int prec, bool overflow_l, bool overflow_r, std::wstring_view const& sep) const {
+			return to_string(prec, overflow_l, overflow_r, { .flat = sep, .up = sep, .down = sep, .overflow = to_string_seps::ellipsis });
+		}
 
 		formatted_valuespan trim_from_end(int left, int right) const;
 		formatted_valuespan trim_from_sect(int left_trail, int right_trail) const {

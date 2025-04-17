@@ -399,7 +399,7 @@ void expt::Settings::load(char const* ini_file)
 	using namespace sigma_lib::inifile;
 
 	constexpr auto section = "Filters.ScriptName";
-	constexpr size_t max_str_len = 256;
+	constexpr size_t max_str_len = 255;
 
 #define read(fld)	if (auto s = read_ini_string(u8"", ini_file, section, #fld, max_str_len); s != L"") fld = std::make_unique<std::wstring>(std::move(s))
 

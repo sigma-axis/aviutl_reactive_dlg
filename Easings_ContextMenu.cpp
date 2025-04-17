@@ -255,7 +255,9 @@ struct copy : cmd_base {
 		auto [obj, track] = info.selected_track();
 		sigma_lib::W32::clipboard::write(
 			formatted_values{ obj, track.track_index }.span()
-			.to_string(info.track_prec, false, false, false));
+			.to_string(info.track_prec, false, false,
+				settings.clipboard_value_sep ? *settings.clipboard_value_sep :
+				formatted_valuespan::to_string_seps::arrow_flat));
 	}
 };
 
@@ -294,7 +296,7 @@ struct paste_unique : paste_base {
 		list = list.trim_from_end(0, list.size() - 1);
 		list.discard_section();
 		append_menu(menu, id, false, L"%s (&V) (%s)", root_title,
-			list.to_string(info.track_prec, false, false, false).c_str());
+			list.to_string(info.track_prec, false, false).c_str());
 		return true;
 	}
 
@@ -314,7 +316,7 @@ struct paste_two : paste_base {
 		list = list.has_section_full() ? list.trim_from_sect(0, 0) : list.trim_from_end(0, list.size() - 2);
 		list.discard_section();
 		append_menu(menu, id, false, L"区間の左右 (%s)",
-			list.to_string(info.track_prec, false, false, false).c_str());
+			list.to_string(info.track_prec, false, false).c_str());
 
 		return true;
 	}
@@ -340,7 +342,7 @@ struct paste_left : paste_base {
 		list = list.trim_from_end(0, list.size() - 1);
 		list.discard_section();
 		append_menu(menu, id, false, L"区間の左だけ (%s)",
-			list.to_string(info.track_prec, false, false, false).c_str());
+			list.to_string(info.track_prec, false, false).c_str());
 
 		return true;
 	}
@@ -363,7 +365,7 @@ struct paste_right : paste_base {
 		list = list.trim_from_end(list.size() - 1, 0);
 		list.discard_section();
 		append_menu(menu, id, false, L"区間の右だけ (%s)",
-			list.to_string(info.track_prec, false, false, false).c_str());
+			list.to_string(info.track_prec, false, false).c_str());
 
 		return true;
 	}
@@ -389,7 +391,7 @@ struct paste_left_all : paste_base {
 			if (list.has_section_full()) list = list.trim_from_sect_r(-1);
 			append_menu(menu, id, false, L"%s (%s)", menu_title,
 				list.trim_from_end(list.size() - 3, 0)
-				.to_string(info.track_prec, true, false, false).c_str());
+				.to_string(info.track_prec, true, false).c_str());
 		}
 		else append_menu(menu, id, true, menu_title);
 
@@ -416,7 +418,7 @@ struct paste_right_all : paste_base {
 			if (list.has_section_full()) list = list.trim_from_sect_l(-1);
 			append_menu(menu, id, false, L"%s (%s)", menu_title,
 				list.trim_from_end(0, list.size() - 3)
-				.to_string(info.track_prec, false, true, false).c_str());
+				.to_string(info.track_prec, false, true).c_str());
 		}
 		else append_menu(menu, id, true, menu_title);
 
@@ -441,7 +443,7 @@ struct paste_all : paste_base {
 		if (info.values_count.min >= 3) {
 			// (...%s→[ %s→%s ]→%s...)
 			append_menu(menu, id, false, L"%s (%s)", menu_title,
-				list.trim_from_sect(1, 1).to_string(info.track_prec, true, true, false).c_str());
+				list.trim_from_sect(1, 1).to_string(info.track_prec, true, true).c_str());
 		}
 		else append_menu(menu, id, true, menu_title);
 
@@ -469,7 +471,7 @@ struct paste_all_headed : paste_base {
 		list.discard_section();
 		append_menu(menu, id, false, L"%s (%s)", list.size() == 1 ? L"先頭だけ" : L"先頭から順に",
 			list.trim_from_end(0, list.size() - 3)
-			.to_string(info.track_prec, false, !info.values_count.uniformly(2), false).c_str());
+			.to_string(info.track_prec, false, !info.values_count.uniformly(2)).c_str());
 
 		return true;
 	}
@@ -492,7 +494,7 @@ struct paste_all_tailed : paste_base {
 		list.discard_section();
 		append_menu(menu, id, false, L"%s (%s)", list.size() == 1 ? L"末尾だけ" : L"末尾から順に",
 			list.trim_from_end(list.size() - 3, 0)
-			.to_string(info.track_prec, !info.values_count.uniformly(2), false, false).c_str());
+			.to_string(info.track_prec, !info.values_count.uniformly(2), false).c_str());
 		return true;
 	}
 
@@ -511,7 +513,7 @@ struct paste_uniform : paste_base {
 
 		list.discard_section();
 		append_menu(menu, id, false, L"全区間一律に (%s)",
-			list.to_string(info.track_prec, false, false, false).c_str());
+			list.to_string(info.track_prec, false, false).c_str());
 		return true;
 	}
 
@@ -531,7 +533,7 @@ struct paste_uniform_l : paste_base {
 		if (info.values_count.min >= 3 && info.selected_section > 0) {
 			list.discard_section();
 			append_menu(menu, id, false, L"%s (%s)", menu_title,
-				list.to_string(info.track_prec, false, false, false).c_str());
+				list.to_string(info.track_prec, false, false).c_str());
 		}
 		else append_menu(menu, id, true, menu_title);
 
@@ -554,7 +556,7 @@ struct paste_uniform_r : paste_base {
 		if (info.values_count.min >= 3 && info.selected_section < info.values_count.min - 2) {
 			list.discard_section();
 			append_menu(menu, id, false, L"%s (%s)", menu_title,
-				list.to_string(info.track_prec, false, false, false).c_str());
+				list.to_string(info.track_prec, false, false).c_str());
 		}
 		else append_menu(menu, id, true, menu_title);
 
@@ -1053,6 +1055,13 @@ void expt::Settings::load(char const* ini_file)
 #define read(func, fld, ...)	fld = read_ini_##func(fld, ini_file, section, #fld __VA_OPT__(,) __VA_ARGS__)
 
 	read(bool,	context_menu);
+
+#undef read
+
+	constexpr size_t max_str_len = 31;
+#define read(fld)	if (auto s = read_ini_string(u8"", ini_file, section, #fld, max_str_len); s != L"") fld = std::make_unique<std::wstring>(std::move(s))
+
+	read(clipboard_value_sep);
 
 #undef read
 }

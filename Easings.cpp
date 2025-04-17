@@ -214,17 +214,14 @@ formatted_valuespan expt::formatted_valuespan::trim_from_end(int left, int right
 	};
 }
 
-std::wstring expt::formatted_valuespan::to_string(int prec, bool ellip_l, bool ellip_r, bool zigzag) const
+std::wstring expt::formatted_valuespan::to_string(int prec, bool overflow_l, bool overflow_r, to_string_seps const& seps) const
 {
 	// symbolic tokens.
-	constexpr auto arrow = [](double left, double right, bool zigzag) {
-		if (zigzag) {
-			if (left < right) return L'\u2197'; // North East Arrow.
-			if (left > right) return L'\u2198'; // South East Arrow.
-		}
-		return L'\u2192'; // Rightwards Arrow.
+	constexpr auto arrow = [](double left, double right, to_string_seps const& seps) {
+		if (left < right) return seps.up;
+		if (left > right) return seps.down;
+		return seps.flat;
 	};
-	constexpr wchar_t overflow = L'\u2026'; // Horizontal Ellipsis.
 	constexpr std::wstring_view bra_l = L"[ ", bra_r = L" ]";
 
 	// helper lambda.
@@ -246,9 +243,9 @@ std::wstring expt::formatted_valuespan::to_string(int prec, bool ellip_l, bool e
 	for (int i = 0; i < size(); i++) {
 		double curr = values[i];
 		if (i == 0) {
-			if (ellip_l && more_l) ret += overflow; // heading "...".
+			if (overflow_l && more_l) ret += seps.overflow; // heading ellipsis.
 		}
-		else ret += arrow(prev, curr, zigzag);
+		else ret += arrow(prev, curr, seps);
 
 		if (i == section) ret += bra_l;
 
@@ -257,7 +254,7 @@ std::wstring expt::formatted_valuespan::to_string(int prec, bool ellip_l, bool e
 		if (i == section + 1) ret += bra_r;
 
 		if (i == size() - 1) {
-			if (ellip_r && more_r) ret += overflow; // tail "...".
+			if (overflow_r && more_r) ret += seps.overflow; // tail ellipsis.
 		}
 
 		prev = curr;

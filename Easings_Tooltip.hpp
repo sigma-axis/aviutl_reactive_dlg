@@ -13,6 +13,8 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <string>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -29,9 +31,9 @@ namespace reactive_dlg::Easings::Tooltip
 		bool cursor_value = true;
 		struct {
 			int8_t left, right;
-			bool zigzag;
+			std::unique_ptr<std::wstring> arrow_flat, arrow_up, arrow_down, ellipsis;
 			bool is_enabled() const { return left != 0 || right != 0; }
-		} values{ 5, 5, false };
+		} values{ 5, 5, nullptr, nullptr, nullptr };
 
 		bool animation = true;
 		uint16_t delay = 340, duration = 10000;
