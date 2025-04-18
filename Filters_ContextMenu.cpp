@@ -144,55 +144,52 @@ namespace lua_code
 		}
 		return ret;
 	}
-
-	namespace append
-	{
-		static inline void number(std::string& s, int32_t n, int32_t d)
-		{
-			int const prec = std::lroundf(std::log10f(static_cast<float>(d)));
-			char buf[std::bit_ceil(TrackInfo::max_value_len + 1)];
-			s.append(buf, ::sprintf_s(buf, "%.*f", prec, static_cast<double>(n) / d));
-		}
-
-		static inline void integer(std::string& s, int32_t i)
-		{
-			char buf[std::bit_ceil(10u + 1)];
-			s.append(buf, ::sprintf_s(buf, "%d", i));
-		}
-
-		static inline void binary(std::string& s, byte const* data, size_t len)
-		{
-			s.resize_and_overwrite(s.size() + 2 * len + 2, [](char*, size_t sz) { return sz; });
-			auto dst = s.end() - (2 * len + 2);
-
-			if (len <= 4) { *(dst++) = '0'; *(dst++) = 'x'; } // by number, add prefix.
-			else { *(dst++) = '"'; dst[len] = '"'; } // by string, surround by double quotes.
-
-			// write binary content.
-			constexpr auto hex = [](byte b) -> char {
-				if (b < 10) return '0' + b;
-				else return ('a' - 10) + b;
-			};
-			for (auto p = data, e = data + len; p < e; p++) {
-				*(dst++) = hex((*p) >> 4);
-				*(dst++) = hex((*p) & 0x0f);
-			}
-		}
-
-		static inline void string(std::string& s, std::string_view str)
-		{
-			auto const str2 = escape_string(str);
-			if (!str2.empty()) str = str2;
-
-			s.reserve(s.size() + str.size() + 2);
-			s.append("\"");
-			s.append(str);
-			s.append("\"");
-		}
-
-		static inline void comma(std::string& s) { s.append(","); }
-	}
 }
+
+struct lua_codepiece {
+	std::string s{};
+
+	auto& put(int32_t n, int32_t d = 1)
+	{
+		int const prec = std::lroundf(std::log10f(static_cast<float>(d)));
+		char buf[std::bit_ceil(TrackInfo::max_value_len + 1)];
+		return append(buf, ::sprintf_s(buf, "%.*f", prec, static_cast<double>(n) / d));
+	}
+
+	auto& put(byte const* data, size_t len)
+	{
+		s.resize_and_overwrite(s.size() + 2 * len + 2, [](char*, size_t sz) { return sz; });
+		auto dst = s.end() - (2 * len + 2);
+
+		if (len <= 4) { *(dst++) = '0'; *(dst++) = 'x'; } // by number, add prefix.
+		else { *(dst++) = '"'; dst[len] = '"'; } // by string, surround by double quotes.
+
+		// write binary content.
+		constexpr auto hex = [](byte b) -> char {
+			if (b < 10) return '0' + b;
+			else return ('a' - 10) + b;
+		};
+		for (auto p = data, e = data + len; p < e; p++) {
+			*(dst++) = hex((*p) >> 4);
+			*(dst++) = hex((*p) & 0x0f);
+		}
+
+		return *this;
+	}
+
+	auto& put(std::string_view str)
+	{
+		auto const str2 = lua_code::escape_string(str);
+		if (!str2.empty()) str = str2;
+
+		s.reserve(s.size() + str.size() + 2);
+		return append("\"").append(str).append("\"");
+	}
+
+	constexpr auto& comma() { return append(","); }
+	constexpr auto& append(auto... args) { s.append(args...); return *this; }
+	constexpr operator std::string() const { return s; }
+};
 
 static inline bool can_obj_effect(ExEdit::Filter::Flag flags)
 {
@@ -213,29 +210,21 @@ static inline std::string compose_obj_effect(ExEdit::Object const& obj, ExEdit::
 	auto const& filter = *exedit.loaded_filter_table[param.id];
 	if (!can_obj_effect(filter.flag)) return {};
 
-	namespace put = lua_code::append;
-	std::string ret = "obj.effect(";
-	put::string(ret, filter.name);
+	lua_codepiece ret{ "obj.effect(" };
+	ret.put(filter.name);
 
 	// tracks
 	for (int32_t i = 0; i < filter.track_n; i++) {
-		put::comma(ret);
-		put::string(ret, filter.track_name[i]);
-
-		put::comma(ret);
-		put::number(ret, obj.track_value_left[param.track_begin + i],
-			filter.track_scale == nullptr ? 1 : std::max(filter.track_scale[i], 1));
+		ret.comma().put(filter.track_name[i])
+			.comma().put(obj.track_value_left[param.track_begin + i],
+				filter.track_scale == nullptr ? 1 : std::max(filter.track_scale[i], 1));
 	}
 
 	// checks
 	for (int32_t i = 0; i < filter.check_n; i++) {
-		if (filter.check_default[i] < 0) continue; // button or combo box.
-
-		put::comma(ret);
-		put::string(ret, filter.check_name[i]);
-
-		put::comma(ret);
-		put::integer(ret, leader.check_value[param.check_begin + i]);
+		if (filter.check_default[i] >= 0) // exclude button and combo box.
+			ret.comma().put(filter.check_name[i])
+				.comma().put(leader.check_value[param.check_begin + i]);
 	}
 
 	// exdata
@@ -257,9 +246,7 @@ static inline std::string compose_obj_effect(ExEdit::Object const& obj, ExEdit::
 			}
 
 			// write the name.
-			put::comma(ret);
-			put::string(ret, use->name);
-			put::comma(ret);
+			ret.comma().put(use->name).comma();
 
 			// write data according to the specified type.
 			switch (type) {
@@ -267,11 +254,11 @@ static inline std::string compose_obj_effect(ExEdit::Object const& obj, ExEdit::
 			{
 				int32_t n = 0;
 				std::memcpy(&n, data, std::min<size_t>(use->size, sizeof(n)));
-				put::integer(ret, n);
+				ret.put(n);
 				break;
 			}
 			case ExEdit::ExdataUse::Type::Binary:
-				put::binary(ret, data, use->size);
+				ret.put(data, use->size);
 				break;
 			case ExEdit::ExdataUse::Type::String:
 			{
@@ -281,7 +268,7 @@ static inline std::string compose_obj_effect(ExEdit::Object const& obj, ExEdit::
 				};
 				if (auto const pos = str.find_first_of('\0'); pos != str.npos)
 					str = str.substr(0, pos);
-				put::string(ret, str);
+				ret.put(str);
 				break;
 			}
 			default: std::unreachable();
@@ -289,8 +276,7 @@ static inline std::string compose_obj_effect(ExEdit::Object const& obj, ExEdit::
 		}
 	}
 
-	ret.append(")");
-	return ret;
+	return ret.append(")");
 }
 
 // identifies the object and the filter targeted for the manipulation.
