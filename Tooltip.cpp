@@ -22,6 +22,7 @@ using byte = uint8_t;
 #include <exedit.hpp>
 
 #include "inifile_op.hpp"
+#include "monitors.hpp"
 
 #include "reactive_dlg.hpp"
 #include "Tooltip.hpp"
@@ -89,4 +90,100 @@ void expt::Settings::load(char const* ini_file)
 	read(int,,	text_color,	-1, max_color);
 
 #undef read
+}
+
+bool expt::tooltip_callback(LRESULT& ret, HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, tooltip_content_base& content)
+{
+	if (*exedit.SettingDialogObjectIndex < 0) return false;
+
+	switch (message) {
+	case WM_LBUTTONDOWN:
+	case WM_LBUTTONUP:
+	case WM_MBUTTONDOWN:
+	case WM_MBUTTONUP:
+	case WM_MOUSEMOVE:
+	case WM_NCMOUSEMOVE:
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONUP:
+	{
+		// relayed messages.
+		MSG msg{ .hwnd = hwnd, .message = message, .wParam = wparam, .lParam = lparam };
+		::SendMessageW(tooltip, TTM_RELAYEVENT,
+			message == WM_MOUSEMOVE ? ::GetMessageExtraInfo() : 0, reinterpret_cast<LPARAM>(&msg));
+		break;
+	}
+
+	case WM_NOTIFY:
+		if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == tooltip) {
+			constexpr auto dummy_text_a = "\t";
+			constexpr auto dummy_text_w = L"\t";
+
+			switch (hdr->code) {
+			case TTN_GETDISPINFOA:
+			{
+				// supply the content string, which is this time a dummy,
+				// or nothing if tooltip has no use for the current state.
+				if (content.is_tip_worthy()) {
+					reinterpret_cast<NMTTDISPINFOA*>(lparam)
+						->lpszText = const_cast<char*>(dummy_text_a);
+					content.invalidate();
+				}
+				return ret = {}, true;
+			}
+			case TTN_SHOW:
+			{
+				// adjust the tooltip size to fit with the content.
+				RECT rc;
+				::GetWindowRect(tooltip, &rc);
+				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
+				auto& size = content.size();
+				rc.right = rc.left + size.cx + 2; // add slight extra space on the right and bottom.
+				rc.bottom = rc.top + size.cy + 1;
+				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
+
+				// adjust the position not to clip edges of screens.
+				rc = sigma_lib::W32::monitor<true>{ rc.left, rc.top }
+				.expand(-8).clamp(rc); // 8 pixels of padding.
+				::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
+					rc.right - rc.left, rc.bottom - rc.top,
+					SWP_NOZORDER | SWP_NOACTIVATE);
+				return ret = TRUE, true;
+			}
+
+			case NM_CUSTOMDRAW:
+			{
+				auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
+				switch (dhdr->nmcd.dwDrawStage) {
+				case CDDS_PREPAINT:
+				{
+					// prepare the tooltip content.
+					if (!content.is_valid())
+						content.measure(dhdr->nmcd.hdc);
+
+					// actual drawing is done on the CDDS_POSTPAINT notification.
+					if (::IsWindowVisible(tooltip) != FALSE)
+						return ret = CDRF_NOTIFYPOSTPAINT, true;
+					break;
+				}
+				case CDDS_POSTPAINT:
+				{
+					auto dc = dhdr->nmcd.hdc;
+
+					// change the text color if specified.
+					if (settings.text_color >= 0)
+						::SetTextColor(dc, bgr2rgb(settings.text_color));
+
+					// draw the content.
+					if (content.is_valid())
+						content.draw(dc, dhdr->nmcd.rc);
+					break;
+				}
+				}
+				return ret = CDRF_DODEFAULT, true;
+			}
+			}
+		}
+		break;
+	}
+	return false;
 }

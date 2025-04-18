@@ -43,7 +43,7 @@ NS_BEGIN()
 ////////////////////////////////
 using namespace reactive_dlg::Filters::Tooltip;
 namespace common = reactive_dlg::Tooltip;
-using common::tooltip, common::bgr2rgb, reactive_dlg::Easings::easing_name_spec;
+using common::tooltip, reactive_dlg::Easings::easing_name_spec;
 
 static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&settings); }
 
@@ -334,34 +334,42 @@ static inline std::wstring format_exdata(size_t filter_index, ExEdit::Object con
 }
 
 // storage of the tooltip content.
+struct tooltip_content : common::tooltip_content_base 	{
+	static inline SIZE sz{};
+
 #ifndef _DEBUG
-constinit
+	constinit
 #endif // !_DEBUG
-static struct tooltip_content {
-	int width, height;
-
-	std::wstring name, index, trackbars, checks, exdata;
-	int pos_x_index, pos_y_tracks, pos_y_checks, pos_y_exdata;
-
-	inline void measure(size_t filter_index, HDC dc);
-	inline void draw(HDC dc, RECT const& rc) const;
-	constexpr bool is_valid() const { return width > 0 && height > 0; }
-	void invalidate() { width = height = 0; }
+	static inline std::wstring name{}, index{}, trackbars{}, checks{}, exdata{};
+	static inline int pos_x_index{}, pos_y_tracks{}, pos_y_checks{}, pos_y_exdata{};
 
 private:
 	constexpr static int gap_cols = 12, gap_header = 4, gap_rows = 2;
 	constexpr static UINT draw_text_options = DT_NOCLIP | DT_NOPREFIX;
 
-} content{};
+public:
+	size_t idx = 0;
+	constexpr tooltip_content(size_t idx) : idx{ idx } {}
+
+	SIZE& size() override { return sz; }
+	bool is_tip_worthy() const override
+	{
+		auto const* const objects = *exedit.ObjectArray_ptr;
+		auto const& obj = objects[*exedit.SettingDialogObjectIndex];
+		auto const& leading = obj.index_midpt_leader < 0 ? obj : objects[obj.index_midpt_leader];
+		return idx < static_cast<size_t>(leading.countFilters()) &&
+			has_flag_or(leading.filter_status[idx], ExEdit::Object::FilterStatus::Folding);
+	}
+	void measure(HDC dc) override;
+	void draw(HDC dc, RECT const& rc) const override;
+};
 
 
 ////////////////////////////////
 // Tooltip drawings.
 ////////////////////////////////
-void tooltip_content::measure(size_t filter_index, HDC dc)
+void tooltip_content::measure(HDC dc)
 {
-	if (is_valid()) return;
-
 	constexpr auto concat = [](std::wstring const& l, std::wstring const& r) -> std::wstring {
 		if (l.empty()) return r;
 		else if (r.empty()) return l;
@@ -371,31 +379,31 @@ void tooltip_content::measure(size_t filter_index, HDC dc)
 	int const obj_index = *exedit.SettingDialogObjectIndex;
 	auto const* const objects = *exedit.ObjectArray_ptr;
 	auto const& obj = objects[obj_index];
-	auto const* filter = exedit.loaded_filter_table[obj.filter_param[filter_index].id];
+	auto const* filter = exedit.loaded_filter_table[obj.filter_param[idx].id];
 	size_t const count_filters = obj.countFilters();
 	auto const* out_filter = exedit.loaded_filter_table[obj.filter_param[count_filters - 1].id];
 	if (!has_flag_or(out_filter->flag, ExEdit::Filter::Flag::Output))
 		out_filter = nullptr;
 
 	// format each element.
-	name = button_text(exedit.filter_checkboxes[filter_index]);
-	index = format_index(filter_index, obj, filter, out_filter);
+	name = button_text(exedit.filter_checkboxes[idx]);
+	index = format_index(idx, obj, filter, out_filter);
 
 	if (settings.trackbars != Settings::trackbar_level::none) {
-		trackbars = format_trackbars(filter_index, obj, filter);
-		if (filter_index == 0 && out_filter != nullptr)
+		trackbars = format_trackbars(idx, obj, filter);
+		if (idx == 0 && out_filter != nullptr)
 			trackbars = concat(format_trackbars(count_filters - 1, obj, out_filter), trackbars);
 	}
 
 	if (settings.checks) {
-		checks = format_checks(filter_index, obj, filter);
-		if (filter_index == 0 && out_filter != nullptr)
+		checks = format_checks(idx, obj, filter);
+		if (idx == 0 && out_filter != nullptr)
 			checks = concat(format_checks(count_filters - 1, obj, out_filter), checks);
 	}
 
 	if (settings.exdata) {
-		exdata = format_exdata(filter_index, obj, filter);
-		if (filter_index == 0 && out_filter != nullptr)
+		exdata = format_exdata(idx, obj, filter);
+		if (idx == 0 && out_filter != nullptr)
 			exdata = concat(format_exdata(count_filters - 1, obj, out_filter), exdata);
 	}
 
@@ -422,19 +430,17 @@ void tooltip_content::measure(size_t filter_index, HDC dc)
 		w_chk = rc_chk.right - rc_chk.left, h_chk = rc_chk.bottom - rc_chk.top,
 		w_ex = rc_ex.right - rc_ex.left, h_ex = rc_ex.bottom - rc_ex.top;
 
-	width = std::max({ w_nm + gap_cols + w_idx, w_tr, w_chk, w_ex });
-	pos_x_index = width - w_idx;
+	sz.cx = std::max({ w_nm + gap_cols + w_idx, w_tr, w_chk, w_ex });
+	pos_x_index = sz.cx - w_idx;
 
-	height = h_nm; int gap = gap_header;
-	if (h_tr > 0) pos_y_tracks = height + gap, height = pos_y_tracks + h_tr, gap = gap_rows;
-	if (h_chk > 0) pos_y_checks = height + gap, height = pos_y_checks + h_chk, gap = gap_rows;
-	if (h_ex > 0) pos_y_exdata = height + gap, height = pos_y_exdata + h_ex, gap = gap_rows;
+	sz.cy = h_nm; int gap = gap_header;
+	if (h_tr > 0) pos_y_tracks = sz.cy + gap, sz.cy = pos_y_tracks + h_tr, gap = gap_rows;
+	if (h_chk > 0) pos_y_checks = sz.cy + gap, sz.cy = pos_y_checks + h_chk, gap = gap_rows;
+	if (h_ex > 0) pos_y_exdata = sz.cy + gap, sz.cy = pos_y_exdata + h_ex, gap = gap_rows;
 }
 
 void tooltip_content::draw(HDC dc, RECT const& rc) const
 {
-	if (!is_valid()) return;
-
 	// actual drawing, using content.easing and content.values.
 	{
 		RECT rc2 = rc;
@@ -470,97 +476,11 @@ void tooltip_content::draw(HDC dc, RECT const& rc) const
 ////////////////////////////////
 static inline LRESULT CALLBACK filter_header_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto data)
 {
-	if (*exedit.SettingDialogObjectIndex < 0) return ::DefSubclassProc(hwnd, message, wparam, lparam);
+	LRESULT ret;
+	if (tooltip_content wrap{ static_cast<size_t>(data) };
+		common::tooltip_callback(ret, hwnd, message, wparam, lparam, id, wrap))
+		return ret;
 
-	switch (message) {
-	case WM_LBUTTONDOWN:
-	case WM_LBUTTONUP:
-	case WM_MBUTTONDOWN:
-	case WM_MBUTTONUP:
-	case WM_MOUSEMOVE:
-	case WM_NCMOUSEMOVE:
-	case WM_RBUTTONDOWN:
-	case WM_RBUTTONUP:
-	{
-		// relayed messages.
-		MSG msg{ .hwnd = hwnd, .message = message, .wParam = wparam, .lParam = lparam };
-		::SendMessageW(tooltip, TTM_RELAYEVENT,
-			message == WM_MOUSEMOVE ? ::GetMessageExtraInfo() : 0, reinterpret_cast<LPARAM>(&msg));
-		break;
-	}
-
-	case WM_NOTIFY:
-		if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == tooltip) {
-			constexpr auto dummy_text_a = "\t";
-			constexpr auto dummy_text_w = L"\t";
-
-			switch (hdr->code) {
-			case TTN_GETDISPINFOA:
-			{
-				// supply the content string, which is this time a dummy,
-				// or nothing if tooltip has no use for the current state.
-				size_t idx = static_cast<size_t>(data);
-				auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
-				if (idx < static_cast<size_t>(obj.countFilters()) &&
-					has_flag_or(obj.filter_status[idx], ExEdit::Object::FilterStatus::Folding)) {
-					reinterpret_cast<NMTTDISPINFOA*>(lparam)
-						->lpszText = const_cast<char*>(dummy_text_a);
-					content.invalidate();
-				}
-				return {};
-			}
-			case TTN_SHOW:
-			{
-				// adjust the tooltip size to fit with the content.
-				RECT rc;
-				::GetWindowRect(tooltip, &rc);
-				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
-				rc.right = rc.left + content.width + 2; // add slight extra space on the right and bottom.
-				rc.bottom = rc.top + content.height + 1;
-				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
-
-				// adjust the position not to clip edges of screens.
-				rc = sigma_lib::W32::monitor<true>{ rc.left, rc.top }
-				.expand(-8).clamp(rc); // 8 pixels of padding.
-				::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
-					rc.right - rc.left, rc.bottom - rc.top,
-					SWP_NOZORDER | SWP_NOACTIVATE);
-				return TRUE;
-			}
-
-			case NM_CUSTOMDRAW:
-			{
-				auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
-				switch (dhdr->nmcd.dwDrawStage) {
-				case CDDS_PREPAINT:
-				{
-					// prepare the tooltip content.
-					content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
-
-					// actual drawing is done on the CDDS_POSTPAINT notification.
-					if (::IsWindowVisible(tooltip) != FALSE)
-						return CDRF_NOTIFYPOSTPAINT;
-					break;
-				}
-				case CDDS_POSTPAINT:
-				{
-					auto dc = dhdr->nmcd.hdc;
-
-					// change the text color if specified.
-					if (common::settings.text_color >= 0)
-						::SetTextColor(dc, bgr2rgb(common::settings.text_color));
-
-					// draw the content.
-					content.draw(dc, dhdr->nmcd.rc);
-					break;
-				}
-				}
-				return CDRF_DODEFAULT;
-			}
-			}
-		}
-		break;
-	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
 }
 NS_END

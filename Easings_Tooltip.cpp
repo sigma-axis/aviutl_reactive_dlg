@@ -140,20 +140,17 @@ private:
 };
 
 // storage of the tooltip content.
+struct tooltip_content : common::tooltip_content_base {
+	static inline constinit SIZE sz{};
 #ifndef _DEBUG
-constinit
+	constinit
 #endif // !_DEBUG
-static struct tooltip_content {
-	int width, height;
-
-	std::wstring easing, curr_value, midpt_values;
-	section_graph graph;
-	int pos_y_curr_value, pos_y_midpt_values, pos_x_graph;
-
-	inline void measure(size_t index, HDC dc);
-	inline void draw(HDC dc, RECT const& rc) const;
-	constexpr bool is_valid() const { return width > 0 && height > 0; }
-	void invalidate() { width = height = 0; }
+	static inline std::wstring easing{}, curr_value{}, midpt_values{};
+#ifndef _DEBUG
+	constinit
+#endif // !_DEBUG
+	static inline section_graph graph{};
+	static inline constinit int pos_y_curr_value{}, pos_y_midpt_values{}, pos_x_graph{};
 
 private:
 	constexpr static int
@@ -162,7 +159,26 @@ private:
 		margin_b_easing = 4, margin_b_graph = 4;
 	constexpr static UINT draw_text_options = DT_NOCLIP | DT_NOPREFIX;
 
-} content{};
+public:
+	size_t idx = 0;
+	constexpr tooltip_content(size_t idx) : idx{ idx } {}
+
+	SIZE& size() override { return sz; }
+	bool is_tip_worthy() const override
+	{
+		auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
+		auto const& mode = obj.track_mode[idx];
+		if ((mode.num & 0x0f) == 0) return {}; // 移動無し
+		return settings.mode || settings.graph.enabled ||
+			(settings.values.is_enabled() && !(
+				obj.index_midpt_leader < 0 || // no mid-points.
+				easing_spec{ mode }.twopoints)) ||
+			(settings.cursor_value &&
+				is_frame_within_chain(*exedit.edit_frame_cursor, obj));
+	}
+	void measure(HDC dc) override;
+	void draw(HDC dc, RECT const& rc) const override;
+};
 
 static inline constinit struct graph_pen {
 	constexpr operator bool() const { return pen != nullptr; }
@@ -316,19 +332,17 @@ inline void section_graph::draw(HDC dc, int L, int T, int R, int B) const
 	::SelectObject(dc, old_pen);
 }
 
-inline void tooltip_content::measure(size_t index, HDC dc)
+void tooltip_content::measure(HDC dc)
 {
-	if (is_valid()) return;
-
 	int const obj_index = *exedit.SettingDialogObjectIndex;
 	auto const* const objects = *exedit.ObjectArray_ptr;
 	auto const& obj = objects[obj_index];
-	auto const& mode = obj.track_mode[index];
-	auto const& track_info = exedit.trackinfo_left[index];
+	auto const& mode = obj.track_mode[idx];
+	auto const& track_info = exedit.trackinfo_left[idx];
 	easing_name_spec const name_spec{ mode };
 
 	// the name and desc of the easing.
-	if (settings.mode) easing = format_easing(mode, obj.track_param[index], name_spec);
+	if (settings.mode) easing = format_easing(mode, obj.track_param[idx], name_spec);
 
 	// the calculated value at the frame cursor.
 	if (settings.cursor_value) {
@@ -340,7 +354,7 @@ inline void tooltip_content::measure(size_t index, HDC dc)
 				i >= 0 && curr_frame <= objects[i].frame_end;
 				sect_index = std::exchange(i, exedit.NextObjectIdxArray[i]));
 
-			auto const [filter_index, rel_idx] = find_filter_from_track(objects[sect_index], index);
+			auto const [filter_index, rel_idx] = find_filter_from_track(objects[sect_index], idx);
 			int val; exedit.calc_trackbar(object_filter_index(sect_index, filter_index),
 				curr_frame, 0, &val, reinterpret_cast<char*>(1 + rel_idx));
 			curr_value = format_cursor_value(val, track_info.denominator(), track_info.precision());
@@ -353,7 +367,7 @@ inline void tooltip_content::measure(size_t index, HDC dc)
 			name_spec.spec.twopoints)
 			midpt_values = L"";
 		else {
-			auto const vals = formatted_values{ obj, index };
+			auto const vals = formatted_values{ obj, idx };
 			formatted_valuespan::to_string_seps seps{
 				.flat = settings.values.arrow_flat ? *settings.values.arrow_flat : formatted_valuespan::to_string_seps::arrow_flat,
 				.overflow = settings.values.ellipsis ? *settings.values.ellipsis : formatted_valuespan::to_string_seps::ellipsis,
@@ -369,7 +383,7 @@ inline void tooltip_content::measure(size_t index, HDC dc)
 
 	// easing graph.
 	if (settings.graph.enabled)
-		graph.plot(obj, index, track_info.denominator());
+		graph.plot(obj, idx, track_info.denominator());
 
 	// measure those text.
 	RECT rc1{}, rc2{}, rc3{};
@@ -399,45 +413,45 @@ inline void tooltip_content::measure(size_t index, HDC dc)
 			pos_x_graph = std::min(
 				std::max(w_ease + margin_r_easing, w_vals - settings.graph.width),
 				w_ease + (settings.graph.width >> 1)); // gap at most half width of the graph.
-			width = std::max(w_vals, pos_x_graph + settings.graph.width);
+			sz.cx = std::max(w_vals, pos_x_graph + settings.graph.width);
 		}
 		else {
 			pos_x_graph = 0;
-			width = std::max(w_vals, graph.empty() ? 0 : settings.graph.width);
+			sz.cx = std::max(w_vals, graph.empty() ? 0 : settings.graph.width);
 		}
 
 		if (w_ease <= 0 && graph.empty()) {
 			pos_y_midpt_values = 0;
-			height = h_vals;
+			sz.cy = h_vals;
 		}
 		else {
 			pos_y_midpt_values = std::max(
 				w_ease <= 0 ? 0 : h_ease + margin_b_easing,
 				graph.empty() ? 0 : settings.graph.height + margin_b_graph);
-			height = pos_y_midpt_values + h_vals;
+			sz.cy = pos_y_midpt_values + h_vals;
 		}
 	}
 	else {
 		if (w_ease <= 0 && w_vals <= 0) {
 			pos_x_graph = 0;
-			width = settings.graph.width;
+			sz.cx = settings.graph.width;
 		}
 		else {
 			pos_x_graph = std::max(
 				w_ease <= 0 ? 0 : w_ease + margin_r_easing,
 				w_vals <= 0 ? 0 : w_vals + margin_r_easing);
-			width = graph.empty() ? w_ease : pos_x_graph + settings.graph.width;
+			sz.cx = graph.empty() ? w_ease : pos_x_graph + settings.graph.width;
 		}
 
 		if (w_ease > 0 && w_vals > 0) {
-			height = std::max(
+			sz.cy = std::max(
 				h_ease + margin_b_easing + h_vals,
 				graph.empty() ? 0 : settings.graph.height);
-			pos_y_midpt_values = height - h_vals;
+			pos_y_midpt_values = sz.cy - h_vals;
 		}
 		else {
 			pos_y_midpt_values = 0;
-			height = std::max(std::max(
+			sz.cy = std::max(std::max(
 				w_ease <= 0 ? 0 : h_ease,
 				w_vals <= 0 ? 0 : h_vals),
 				graph.empty() ? 0 : settings.graph.height);
@@ -445,10 +459,8 @@ inline void tooltip_content::measure(size_t index, HDC dc)
 	}
 }
 
-inline void tooltip_content::draw(HDC dc, RECT const& rc) const
+void tooltip_content::draw(HDC dc, RECT const& rc) const
 {
-	if (!is_valid()) return;
-
 	// actual drawing, using content.easing and content.values.
 	if (!easing.empty()) {
 		RECT rc2 = rc;
@@ -480,115 +492,11 @@ inline void tooltip_content::draw(HDC dc, RECT const& rc) const
 ////////////////////////////////
 static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, auto id, auto data)
 {
-	if (*exedit.SettingDialogObjectIndex < 0) return ::DefSubclassProc(hwnd, message, wparam, lparam);
+	LRESULT ret;
+	if (tooltip_content wrap{ static_cast<size_t>(data) };
+		common::tooltip_callback(ret, hwnd, message, wparam, lparam, id, wrap))
+		return ret;
 
-	switch (message) {
-	case WM_LBUTTONDOWN:
-	case WM_LBUTTONUP:
-	case WM_MBUTTONDOWN:
-	case WM_MBUTTONUP:
-	case WM_MOUSEMOVE:
-	case WM_NCMOUSEMOVE:
-	case WM_RBUTTONDOWN:
-	case WM_RBUTTONUP:
-	{
-		// relayed messages.
-		MSG msg{ .hwnd = hwnd, .message = message, .wParam = wparam, .lParam = lparam };
-		::SendMessageW(tooltip, TTM_RELAYEVENT,
-			message == WM_MOUSEMOVE ? ::GetMessageExtraInfo() : 0, reinterpret_cast<LPARAM>(&msg));
-		break;
-	}
-
-	case WM_NOTIFY:
-		if (auto const hdr = reinterpret_cast<NMHDR*>(lparam); hdr->hwndFrom == tooltip) {
-			constexpr auto dummy_text_a = "\t";
-			constexpr auto dummy_text_w = L"\t";
-
-			switch (hdr->code) {
-			case TTN_GETDISPINFOA:
-			{
-				// supply the content string, which is this time a dummy,
-				// or nothing if tooltip has no use for the current state.
-				size_t idx = static_cast<size_t>(data);
-				auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
-				auto const& mode = obj.track_mode[idx];
-				if ((mode.num & 0x0f) == 0) return {}; // 移動無し
-				if (settings.mode || settings.graph.enabled ||
-					(settings.values.is_enabled() && !(
-						obj.index_midpt_leader < 0 || // no mid-points.
-						easing_spec{ mode }.twopoints)) ||
-					(settings.cursor_value &&
-						is_frame_within_chain(*exedit.edit_frame_cursor, obj))) {
-					reinterpret_cast<NMTTDISPINFOA*>(lparam)
-						->lpszText = const_cast<char*>(dummy_text_a);
-					content.invalidate();
-				}
-				return {};
-			}
-			case TTN_SHOW:
-			{
-				// adjust the tooltip size to fit with the content.
-				RECT rc;
-				::GetWindowRect(tooltip, &rc);
-				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
-				rc.right = rc.left + content.width + 2; // add slight extra space on the right and bottom.
-				rc.bottom = rc.top + content.height + 1;
-				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
-
-				// adjust the position not to clip edges of screens.
-				rc = sigma_lib::W32::monitor<true>{ rc.left, rc.top }
-				.expand(-8).clamp(rc); // 8 pixels of padding.
-				::SetWindowPos(tooltip, nullptr, rc.left, rc.top,
-					rc.right - rc.left, rc.bottom - rc.top,
-					SWP_NOZORDER | SWP_NOACTIVATE);
-				return TRUE;
-			}
-
-			case NM_CUSTOMDRAW:
-			{
-				auto const dhdr = reinterpret_cast<NMTTCUSTOMDRAW*>(lparam);
-				switch (dhdr->nmcd.dwDrawStage) {
-				case CDDS_PREPAINT:
-				{
-					// prepare the tooltip content.
-					content.measure(static_cast<size_t>(data), dhdr->nmcd.hdc);
-
-					// actual drawing is done on the CDDS_POSTPAINT notification.
-					if (::IsWindowVisible(tooltip) != FALSE)
-						return CDRF_NOTIFYPOSTPAINT;
-
-					// if the tooltip window is invisible, it's measuring its own size,
-					// and will resize before it actually draws itself.
-					// calculate the lacking size and set the margin for it,
-					// so the size of the tooltip will fit with the desired content.
-					//RECT margin{};
-					//::DrawTextW(dhdr->nmcd.hdc, dummy_text_w, 1, &margin, dhdr->uDrawFlags | DT_CALCRECT);
-					//margin.right = content.width - margin.right + 1; // slight extra space on the right.
-					//margin.bottom = content.height - margin.bottom;
-					//::SendMessageW(tooltip, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
-
-					// NOTE: when visual style is applied, the margin has no effect.
-					break;
-				}
-				case CDDS_POSTPAINT:
-				{
-					auto dc = dhdr->nmcd.hdc;
-
-					// change the text color if specified.
-					if (common::settings.text_color >= 0)
-						::SetTextColor(dc, bgr2rgb(common::settings.text_color));
-
-					// draw the content.
-					content.draw(dc, dhdr->nmcd.rc);
-					break;
-				}
-				}
-				return CDRF_DODEFAULT;
-			}
-			}
-		}
-		break;
-	}
 	return ::DefSubclassProc(hwnd, message, wparam, lparam);
 }
 NS_END

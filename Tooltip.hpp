@@ -47,4 +47,19 @@ namespace reactive_dlg::Tooltip
 	constexpr auto bgr2rgb(int32_t c) {
 		return (std::rotl<uint32_t>(c, 16) & 0x00ff00ff) | (c & 0x0000ff00);
 	}
+
+	struct tooltip_content_base {
+		constexpr bool is_valid() const {
+			auto const& sz = const_cast<tooltip_content_base*>(this)->size();
+			return sz.cx > 0 && sz.cy > 0;
+		}
+		void invalidate() { auto& sz = size(); sz.cx = sz.cy = 0; }
+
+		virtual SIZE& size() = 0;
+		virtual bool is_tip_worthy() const = 0;
+		virtual void measure(HDC dc) = 0;
+		virtual void draw(HDC dc, RECT const& rc) const = 0;
+	};
+
+	bool tooltip_callback(LRESULT& ret, HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, tooltip_content_base& content);
 }
