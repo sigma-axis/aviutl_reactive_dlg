@@ -572,12 +572,14 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				}
 				case CDDS_POSTPAINT:
 				{
+					auto dc = dhdr->nmcd.hdc;
+
 					// change the text color if specified.
 					if (common::settings.text_color >= 0)
 						::SetTextColor(dc, bgr2rgb(common::settings.text_color));
 
 					// draw the content.
-					content.draw(dhdr->nmcd.hdc, dhdr->nmcd.rc);
+					content.draw(dc, dhdr->nmcd.rc);
 					break;
 				}
 				}
