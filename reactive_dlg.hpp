@@ -80,17 +80,16 @@ inline constinit struct ExEdit092 {
 	int32_t*	SelectingObjectNum_ptr;		// 0x167d88
 	int32_t*	SelectingObjectIndex;		// 0x179230
 	int32_t*	edit_frame_cursor;			// 0x1a5304
-	int32_t*	current_filter_index;		// 0x14965C
+	ExEdit::SceneSetting*	scene_settings;	// 0x177a50
 
 	HWND*		hwnd_setting_dlg;			// 0x1539c8
 	//int32_t*	is_playing;					// 0x1a52ec; 0: editing, 1: playing.
 	HWND*		hwnd_edit_text;				// 0x236328
 	HWND*		hwnd_edit_script;			// 0x230c78
-	TrackInfo*	trackinfo_left;				// 0x14d4c8
-	TrackInfo*	trackinfo_right;			// 0x14def0
-	int32_t*	track_label_is_dragging;	// 0x158d30; 0: idle, 1: dragging.
-	int32_t*	track_label_start_drag_x;	// 0x179218
 	HWND*		hwnd_track_buttons;			// 0x158f68
+	HWND*		filter_checkboxes;			// 0x14d368
+	HWND*		filter_separators;			// 0x1790d8
+	HWND*		filter_expanders;			// 0x178fcc
 
 	HMENU*		hmenu_cxt_visual_obj;		// 0x158d2c
 	/*
@@ -102,10 +101,12 @@ inline constinit struct ExEdit092 {
 	*/
 
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
+	TrackInfo*	trackinfo_left;				// 0x14d4c8
+	TrackInfo*	trackinfo_right;			// 0x14def0
+	int32_t*	track_label_is_dragging;	// 0x158d30; 0: idle, 1: dragging.
+	int32_t*	track_label_start_drag_x;	// 0x179218
+	int32_t*	current_filter_index;		// 0x14965c
 
-	HWND*		filter_checkboxes;			// 0x14d368
-	HWND*		filter_separators;			// 0x1790d8
-	HWND*		filter_expanders;			// 0x178fcc
 	uintptr_t*	exdata_table;				// 0x1e0fa8
 	char const*	basic_scene_change_names;	// 0x0aef38
 	char const*	basic_animation_names;		// 0x0c1f08
@@ -148,25 +149,26 @@ private:
 		pick_addr(SelectingObjectNum_ptr,	0x167d88);
 		pick_addr(SelectingObjectIndex,		0x179230);
 		pick_addr(edit_frame_cursor,		0x1a5304);
-		pick_addr(current_filter_index,		0x14965C);
+		pick_addr(scene_settings,			0x177a50);
 
 		pick_addr(hwnd_setting_dlg,			0x1539c8);
 		//pick_addr(is_playing,				0x1a52ec);
 		pick_addr(hwnd_edit_text,			0x236328);
 		pick_addr(hwnd_edit_script,			0x230c78);
-		pick_addr(trackinfo_left,			0x14d4c8);
-		pick_addr(trackinfo_right,			0x14def0);
-		pick_addr(track_label_is_dragging,	0x158d30);
-		pick_addr(track_label_start_drag_x,	0x179218);
 		pick_addr(hwnd_track_buttons,		0x158f68);
+		pick_addr(filter_checkboxes,		0x14d368);
+		pick_addr(filter_separators,		0x1790d8);
+		pick_addr(filter_expanders,			0x178fcc);
 
 		pick_addr(hmenu_cxt_visual_obj,		0x158d2c);
 
 		//pick_addr(setting_dlg_wndproc,		0x02cde0);
+		pick_addr(trackinfo_left,			0x14d4c8);
+		pick_addr(trackinfo_right,			0x14def0);
+		pick_addr(track_label_is_dragging,	0x158d30);
+		pick_addr(track_label_start_drag_x,	0x179218);
+		pick_addr(current_filter_index,		0x14965c);
 
-		pick_addr(filter_checkboxes,		0x14d368);
-		pick_addr(filter_separators,		0x1790d8);
-		pick_addr(filter_expanders,			0x178fcc);
 		pick_addr(exdata_table,				0x1e0fa8);
 		pick_addr(basic_scene_change_names,	0x0aef38);
 		pick_addr(basic_animation_names,	0x0c1f08);

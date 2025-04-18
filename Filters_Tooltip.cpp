@@ -47,6 +47,16 @@ using common::tooltip, common::bgr2rgb, reactive_dlg::Easings::easing_name_spec;
 
 static inline uintptr_t hook_uid() { return reinterpret_cast<uintptr_t>(&settings); }
 
+static inline std::wstring button_text(HWND hwnd)
+{
+	std::wstring ret{};
+	ret.resize_and_overwrite(::SendMessageW(hwnd, WM_GETTEXTLENGTH, 0, 0), [&](wchar_t* ptr, size_t sz)
+	{
+		return ::SendMessageW(hwnd, WM_GETTEXT, sz + 1, reinterpret_cast<LPARAM>(ptr));
+	});
+	return ret;
+}
+
 static inline std::wstring format_index(size_t filter_index, ExEdit::Object const& obj, ExEdit::Filter const* filter, ExEdit::Filter const* out_filter)
 {
 	wchar_t buf[8];
@@ -67,7 +77,7 @@ static inline std::wstring format_trackbars(size_t filter_index, ExEdit::Object 
 
 		// skip stationary track if specified.
 		bool const stationary = (mode.num & 0x0f) == 0;
-		if (settings.trackbars != Settings::trackbar_level::all && stationary) continue;
+		if (settings.trackbars == Settings::trackbar_level::moving && stationary) continue;
 
 		auto const& track_info = exedit.trackinfo_left[index];
 		auto const digits = std::lround(std::log10f(static_cast<float>(track_info.precision())));
@@ -114,12 +124,20 @@ static inline std::wstring format_checks(size_t filter_index, ExEdit::Object con
 	return ret;
 }
 
+static inline bool next_exdata(ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain) {
+	// move the given pointers.
+	data += use->size;
+	size_remain -= use->size;
+	use++;
+	return true;
+}
+
 static inline bool parse_as_file(std::wstring& s, ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain)
 {
 	using Type = ExEdit::ExdataUse::Type;
 	using sigma_lib::string::encode_sys;
 	constexpr static std::string_view token_file = "file";
-	constexpr static std::wstring_view path_delimiter = L"/\\";
+	constexpr static std::wstring_view path_delimiter = L"/\\", path_ellipsis = L"...";
 
 	if (use->name == token_file &&
 		use->size >= 0x100 &&
@@ -137,19 +155,13 @@ static inline bool parse_as_file(std::wstring& s, ExEdit::ExdataUse const*& use,
 			if (auto pos = path.find_last_of(path_delimiter);
 				pos != path.npos && pos > 0) {
 				pos = path.find_last_of(path_delimiter, pos - 1);
-				if (pos != path.npos) path = path.substr(pos + 1);
+				if (pos != path.npos && pos > 0)
+					path.replace(0, pos - 1, path_ellipsis);
 			}
 			s.append(path);
 		}
 
-		s.append(1, L'\n');
-
-		// move the given pointers.
-		data += use->size;
-		size_remain -= use->size;
-		use++;
-
-		return true;
+		return next_exdata(use, data, size_remain);
 	}
 	return false;
 }
@@ -190,21 +202,103 @@ static inline bool parse_as_color(std::wstring& s, ExEdit::ExdataUse const*& use
 			s.append(buf, ::swprintf_s(buf, L"#%02x%02x%02x", data[0], data[1], data[2]));
 		}
 
-		s.append(1, L'\n');
-
 		// move the given pointers.
-		data += use->size;
-		size_remain -= use->size;
-		use++;
+		if (no_color >= 0) // move twice.
+			next_exdata(use, data, size_remain);
+		return next_exdata(use, data, size_remain);
+	}
+	return false;
+}
 
-		if (no_color >= 0) {
-			// move again.
-			data += use->size;
-			size_remain -= use->size;
-			use++;
+static inline bool parse_as_blend(std::wstring& s, ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain)
+{
+	using Type = ExEdit::ExdataUse::Type;
+	using sigma_lib::string::encode_sys;
+	constexpr static std::string_view token_blend = "blend";
+
+	if (use->name == token_blend &&
+		use->size == 4 &&
+		use->type == Type::Number) {
+
+		s.append(L"合成モード: ");
+
+		// take the name from the filter "standard drawing".
+		std::string_view name_src = exedit.loaded_filter_table[filter_id::draw_std]->check_name[0];
+		for (auto idx = *reinterpret_cast<int const*>(data); idx > 0; idx--) {
+			if (name_src.size() == 0) return false; // might not be the blend mode in the context.
+			name_src = name_src.data() + name_src.size() + 1;
 		}
+		s.append(encode_sys::to_wide_str(name_src));
 
-		return true;
+		return next_exdata(use, data, size_remain);
+	}
+	return false;
+}
+
+static inline bool parse_as_text(std::wstring& s, ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain)
+{
+	using Type = ExEdit::ExdataUse::Type;
+	constexpr static std::string_view token_text = "text";
+	constexpr static std::wstring_view text_ellipsis = L"...", line_breaks = L"\r\n";
+	constexpr static size_t min_size_text = 256, max_heading_chars = 64;
+
+	if (use->name == token_text &&
+		use->size >= min_size_text && use->size % sizeof(wchar_t) == 0 &&
+		use->type == Type::Binary) {
+
+		std::wstring_view text{ reinterpret_cast<wchar_t const*>(data), use->size / sizeof(wchar_t) };
+		text = text.substr(0, text.find_first_of(L'\0'));
+
+		// trim the line breaks.
+		if (auto pos = text.find_first_not_of(line_breaks); pos != text.npos)
+			text = text.substr(pos);
+		if (auto pos = text.find_last_not_of(line_breaks); pos != text.npos)
+			text = text.substr(0, pos + 1);
+
+		// leave only non-empty text.
+		if (!text.empty()) {
+			s.append(text.substr(0, max_heading_chars));
+			if (text.size() > max_heading_chars) s.append(text_ellipsis);
+
+			return next_exdata(use, data, size_remain);
+		}
+	}
+	return false;
+}
+
+static inline bool parse_as_scene(std::wstring& s, ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain)
+{
+	using Type = ExEdit::ExdataUse::Type;
+	using sigma_lib::string::encode_sys;
+	constexpr static std::string_view token_scene = "scene";
+	constexpr static int max_scenes = 50;
+
+	if (use->name == token_scene &&
+		use->size == 4 &&
+		use->type == Type::Number) {
+
+		int n = *reinterpret_cast<int const*>(data);
+		s.append(L"シーン: ");
+
+		// compose the scene name.
+		std::wstring scene_name{};
+		if (0 <= n && n < max_scenes) {
+			if (n == 0) scene_name = L"Root";
+			else {
+				wchar_t buf[16];
+				scene_name = { buf, static_cast<size_t>(::swprintf_s(buf, L"Scene %d", n)) };
+			}
+
+			// if it has a custom name, place it at the head.
+			if (auto const* name = exedit.scene_settings[n].name;
+				name != nullptr && name[0] != '\0')
+				scene_name = encode_sys::to_wide_str(name)
+					+ L" (" + scene_name + L")";
+		}
+		else scene_name = L"(指定なし)";
+		s.append(scene_name);
+
+		return next_exdata(use, data, size_remain);
 	}
 	return false;
 }
@@ -219,16 +313,20 @@ static inline std::wstring format_exdata(size_t filter_index, ExEdit::Object con
 	int size_remain = filter->exdata_size;
 
 	std::wstring ret = L"";
-	while (size_remain > 0) {
+	while (size_remain > 0 && use->size <= size_remain) {
 		if (use->name != nullptr && use->type != ExEdit::ExdataUse::Type::Padding) {
-			if (parse_as_file(ret, use, data, size_remain)) continue;
-			if (parse_as_color(ret, use, data, size_remain)) continue;
+			if (parse_as_file(ret, use, data, size_remain) ||
+				parse_as_color(ret, use, data, size_remain) ||
+				parse_as_blend(ret, use, data, size_remain) ||
+				parse_as_text(ret, use, data, size_remain) ||
+				parse_as_scene(ret, use, data, size_remain)) {
+				ret.append(1, L'\n');
+				continue;
+			}
 		}
 
 		// move to the next data.
-		data += use->size;
-		size_remain -= use->size;
-		use++;
+		next_exdata(use, data, size_remain);
 	}
 
 	if (!ret.empty()) ret.pop_back(); // pop the trailing line break.
@@ -242,8 +340,8 @@ constinit
 static struct tooltip_content {
 	int width, height;
 
-	std::wstring index, trackbars, checks, exdata;
-	int pos_x_index, pos_y_checks, pos_y_exdata;
+	std::wstring name, index, trackbars, checks, exdata;
+	int pos_x_index, pos_y_tracks, pos_y_checks, pos_y_exdata;
 
 	inline void measure(size_t filter_index, HDC dc);
 	inline void draw(HDC dc, RECT const& rc) const;
@@ -251,7 +349,7 @@ static struct tooltip_content {
 	void invalidate() { width = height = 0; }
 
 private:
-	constexpr static int gap_cols = 12, gap_rows = 2;
+	constexpr static int gap_cols = 12, gap_header = 4, gap_rows = 2;
 	constexpr static UINT draw_text_options = DT_NOCLIP | DT_NOPREFIX;
 
 } content{};
@@ -280,6 +378,7 @@ void tooltip_content::measure(size_t filter_index, HDC dc)
 		out_filter = nullptr;
 
 	// format each element.
+	name = button_text(exedit.filter_checkboxes[filter_index]);
 	index = format_index(filter_index, obj, filter, out_filter);
 
 	if (settings.trackbars != Settings::trackbar_level::none) {
@@ -301,10 +400,11 @@ void tooltip_content::measure(size_t filter_index, HDC dc)
 	}
 
 	// measure those text.
-	RECT rc_idx{}, rc_tr{}, rc_chk{}, rc_ex{};
-	if (!index.empty())
-		::DrawTextW(dc, index.c_str(), index.size(),
-			&rc_idx, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
+	RECT rc_nm{}, rc_idx{}, rc_tr{}, rc_chk{}, rc_ex{};
+	::DrawTextW(dc, name.c_str(), name.size(),
+		&rc_nm, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
+	::DrawTextW(dc, index.c_str(), index.size(),
+		&rc_idx, DT_CALCRECT | draw_text_options | DT_SINGLELINE);
 	if (!trackbars.empty())
 		::DrawTextW(dc, trackbars.c_str(), trackbars.size(),
 			&rc_tr, DT_CALCRECT | draw_text_options);
@@ -316,22 +416,19 @@ void tooltip_content::measure(size_t filter_index, HDC dc)
 			&rc_ex, DT_CALCRECT | draw_text_options);
 
 	// calculate the layout.
-	int w_idx = rc_idx.right - rc_idx.left, h_idx = rc_idx.bottom - rc_idx.top,
+	int w_nm = rc_nm.right - rc_nm.left, h_nm = rc_nm.bottom - rc_nm.top,
+		w_idx = rc_idx.right - rc_idx.left, h_idx = rc_idx.bottom - rc_idx.top,
 		w_tr = rc_tr.right - rc_tr.left, h_tr = rc_tr.bottom - rc_tr.top,
 		w_chk = rc_chk.right - rc_chk.left, h_chk = rc_chk.bottom - rc_chk.top,
 		w_ex = rc_ex.right - rc_ex.left, h_ex = rc_ex.bottom - rc_ex.top;
 
-	if (w_idx > 0) width = (
-		w_tr > 0 ? w_tr :
-		w_chk > 0 ? w_chk :
-		w_ex > 0 ? w_ex :
-		-gap_cols) + gap_cols + w_idx;
-	width = std::max({ width, w_tr, w_chk, w_ex });
+	width = std::max({ w_nm + gap_cols + w_idx, w_tr, w_chk, w_ex });
 	pos_x_index = width - w_idx;
 
-	pos_y_checks = h_tr > 0 ? h_tr + gap_rows : 0;
-	pos_y_exdata = pos_y_checks + (h_chk > 0 ? h_chk + gap_rows : 0);
-	height = pos_y_exdata + (h_ex > 0 ? h_ex : -gap_rows);
+	height = h_nm; int gap = gap_header;
+	if (h_tr > 0) pos_y_tracks = height + gap, height = pos_y_tracks + h_tr, gap = gap_rows;
+	if (h_chk > 0) pos_y_checks = height + gap, height = pos_y_checks + h_chk, gap = gap_rows;
+	if (h_ex > 0) pos_y_exdata = height + gap, height = pos_y_exdata + h_ex, gap = gap_rows;
 }
 
 void tooltip_content::draw(HDC dc, RECT const& rc) const
@@ -343,14 +440,17 @@ void tooltip_content::draw(HDC dc, RECT const& rc) const
 		::SetTextColor(dc, bgr2rgb(common::settings.text_color));
 
 	// actual drawing, using content.easing and content.values.
-	if (!index.empty()) {
+	{
 		RECT rc2 = rc;
+		::DrawTextW(dc, name.c_str(), name.size(),
+			&rc2, draw_text_options | DT_SINGLELINE);
 		rc2.left = pos_x_index;
 		::DrawTextW(dc, index.c_str(), index.size(),
 			&rc2, draw_text_options | DT_SINGLELINE);
 	}
 	if (!trackbars.empty()) {
 		RECT rc2 = rc;
+		rc2.top = pos_y_tracks;
 		::DrawTextW(dc, trackbars.c_str(), trackbars.size(),
 			&rc2, draw_text_options);
 	}
