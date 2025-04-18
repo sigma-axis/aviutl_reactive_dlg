@@ -83,7 +83,7 @@ static inline std::wstring format_trackbars(size_t filter_index, ExEdit::Object 
 		auto const digits = std::lround(std::log10f(static_cast<float>(track_info.precision())));
 
 		// write the left value.
-		ret.append(encode_sys::to_wide_str(filter->track_name[rel_idx]));
+		ret.append(button_text(exedit.hwnd_track_buttons[index]));
 		ret.append(buf, ::swprintf_s(buf, L": %.*f", digits,
 			track_info.calc_value(obj.track_value_left[index])));
 
@@ -435,10 +435,6 @@ void tooltip_content::draw(HDC dc, RECT const& rc) const
 {
 	if (!is_valid()) return;
 
-	// change the text color if specified.
-	if (common::settings.text_color >= 0)
-		::SetTextColor(dc, bgr2rgb(common::settings.text_color));
-
 	// actual drawing, using content.easing and content.values.
 	{
 		RECT rc2 = rc;
@@ -548,6 +544,10 @@ static inline LRESULT CALLBACK filter_header_hook(HWND hwnd, UINT message, WPARA
 				}
 				case CDDS_POSTPAINT:
 				{
+					// change the text color if specified.
+					if (common::settings.text_color >= 0)
+						::SetTextColor(dc, bgr2rgb(common::settings.text_color));
+
 					// draw the content.
 					content.draw(dhdr->nmcd.hdc, dhdr->nmcd.rc);
 					break;

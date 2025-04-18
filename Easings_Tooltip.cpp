@@ -449,10 +449,6 @@ inline void tooltip_content::draw(HDC dc, RECT const& rc) const
 {
 	if (!is_valid()) return;
 
-	// change the text color if specified.
-	if (common::settings.text_color >= 0)
-		::SetTextColor(dc, bgr2rgb(common::settings.text_color));
-
 	// actual drawing, using content.easing and content.values.
 	if (!easing.empty()) {
 		RECT rc2 = rc;
@@ -576,6 +572,10 @@ static inline LRESULT CALLBACK param_button_hook(HWND hwnd, UINT message, WPARAM
 				}
 				case CDDS_POSTPAINT:
 				{
+					// change the text color if specified.
+					if (common::settings.text_color >= 0)
+						::SetTextColor(dc, bgr2rgb(common::settings.text_color));
+
 					// draw the content.
 					content.draw(dhdr->nmcd.hdc, dhdr->nmcd.rc);
 					break;
