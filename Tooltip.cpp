@@ -123,11 +123,9 @@ bool expt::tooltip_callback(LRESULT& ret, HWND hwnd, UINT message, WPARAM wparam
 			{
 				// supply the content string, which is this time a dummy,
 				// or nothing if tooltip has no use for the current state.
-				if (content.is_tip_worthy()) {
+				if (content.is_tip_worthy())
 					reinterpret_cast<NMTTDISPINFOA*>(lparam)
 						->lpszText = const_cast<char*>(dummy_text_a);
-					content.invalidate();
-				}
 				return ret = {}, true;
 			}
 			case TTN_SHOW:
@@ -148,6 +146,11 @@ bool expt::tooltip_callback(LRESULT& ret, HWND hwnd, UINT message, WPARAM wparam
 					rc.right - rc.left, rc.bottom - rc.top,
 					SWP_NOZORDER | SWP_NOACTIVATE);
 				return ret = TRUE, true;
+			}
+			case TTN_POP:
+			{
+				content.invalidate();
+				return ret = {}, true;
 			}
 
 			case NM_CUSTOMDRAW:
