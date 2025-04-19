@@ -162,7 +162,7 @@ struct lua_codepiece {
 		auto dst = s.end() - (2 * len + 2);
 
 		if (len <= 4) { *(dst++) = '0'; *(dst++) = 'x'; } // by number, add prefix.
-		else { *(dst++) = '"'; dst[len] = '"'; } // by string, surround by double quotes.
+		else { *(dst++) = '"'; dst[2 * len] = '"'; } // by string, surround by double quotes.
 
 		// write binary content.
 		constexpr auto hex = [](byte b) -> char {
@@ -232,7 +232,7 @@ static inline std::string compose_obj_effect(ExEdit::Object const& obj, ExEdit::
 		byte const* data = find_exdata<byte>(leader.exdata_offset, param.exdata_offset);
 		auto const e = data + filter.exdata_size;
 		for (auto const* use = filter.exdata_use;
-			data < e; data += use->size, use++) {
+			data < e && data + use->size <= e; data += use->size, use++) {
 			auto const type = use->type;
 
 			// ignore types other than number, binary, or string.
@@ -307,8 +307,14 @@ static inline bool copy_as_lua()
 	auto str = compose_obj_effect(*o_ptr, *l_ptr, *f_ptr);
 	if (str.empty()) return false; // not a suitable filter for copying.
 
+	// convert to CRLF line breaks, as specified in Win32 API docs.
+	for (size_t pos = 0; pos = str.find('\n', pos), pos != str.npos; pos++) {
+		if (pos > 0 && str[pos - 1] == '\r') continue;
+		str.insert(pos, 1, '\r'); pos++;
+	}
+	str += "\r\n";
+
 	// send to the clipboard.
-	str += "\r\n"; // CRLF line break, as specified in Win32 API docs.
 	sigma_lib::W32::clipboard::write(
 		sigma_lib::string::encode_sys::to_wide_str(str));
 

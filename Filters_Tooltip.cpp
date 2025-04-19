@@ -124,11 +124,13 @@ static inline std::wstring format_checks(size_t filter_index, ExEdit::Object con
 	return ret;
 }
 
-static inline bool next_exdata(ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain) {
+static inline bool next_exdata(ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain, size_t count = 1) {
 	// move the given pointers.
-	data += use->size;
-	size_remain -= use->size;
-	use++;
+	while ((count--) > 0) {
+		data += use->size;
+		size_remain -= use->size;
+		use++;
+	}
 	return true;
 }
 
@@ -183,7 +185,7 @@ static inline bool parse_as_color(std::wstring& s, ExEdit::ExdataUse const*& use
 		std::string_view const color_idx = use_name.substr(token_color.size());
 
 		// find no_color flag.
-		int8_t no_color = -1; // -1: no such flag, 0: flase, 1: true.
+		int8_t no_color = -1; // -1: no such flag, 0: false, 1: true.
 		if (size_remain > 3 && use[1].name != nullptr) {
 			std::string_view use1_name = use[1].name;
 			if (use1_name.starts_with(token_no_color) &&
@@ -203,11 +205,68 @@ static inline bool parse_as_color(std::wstring& s, ExEdit::ExdataUse const*& use
 		}
 
 		// move the given pointers.
-		if (no_color >= 0) // move twice.
-			next_exdata(use, data, size_remain);
-		return next_exdata(use, data, size_remain);
+		return next_exdata(use, data, size_remain, no_color >= 0 ? 2 : 1);
 	}
 	return false;
+}
+
+static inline bool parse_as_color_yc(std::wstring& s, ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain)
+{
+	using Type = ExEdit::ExdataUse::Type;
+	using sigma_lib::string::encode_sys;
+	constexpr static std::string_view token_color = "color", token_color_yc = "color_yc",
+		token_status = "status", char_digits = "0123456789";
+
+	if (!(use->size == 6 &&
+		use->type == Type::Binary)) return false;
+
+	std::string_view color_idx{};
+	if (std::string_view const use_name = use->name;
+		use_name.starts_with(token_color) &&
+		use_name.find_first_not_of(char_digits, token_color.size()) == use_name.npos)
+		color_idx = use_name.substr(token_color.size());
+	else if (std::string_view const use_name = use->name;
+		use_name.starts_with(token_color_yc) &&
+		use_name.find_first_not_of(char_digits, token_color_yc.size()) == use_name.npos)
+		color_idx = use_name.substr(token_color_yc.size());
+	else return false;
+
+	auto const* const col = reinterpret_cast<ExEdit::Exdata::ExdataColorYCOpt const*>(data);
+
+	// find status flag.
+	bool status = true; size_t cnt_extra = 0;
+	if (size_remain >= 8 && use[1].name != nullptr &&
+		use[1].size == 2 && use[1].type == Type::Number) {
+		std::string_view use1_name = use[1].name;
+		if (use1_name.starts_with(token_status) &&
+			color_idx == use1_name.substr(token_status.size())) {
+			status = col->status != 0;
+			cnt_extra = 1;
+		}
+	}
+	else if (size_remain >= 8 + 4 &&
+		use[1].size == 2 && use[1].type == Type::Padding &&
+		use[2].name != nullptr &&
+		use[2].size == 4 && use[2].type == Type::Number) {
+		std::string_view use1_name = use[2].name;
+		if (use1_name.starts_with(token_status) &&
+			color_idx == use1_name.substr(token_status.size())) {
+			status = *reinterpret_cast<int32_t const*>(data + 8) != 0;
+			cnt_extra = 2;
+		}
+	}
+
+	// append a line.
+	s.append(L"YCbCr" + encode_sys::to_wide_str(color_idx) + L": ");
+	if (status) {
+		wchar_t buf[32];
+		s.append(buf, ::swprintf_s(buf, L"( %d , %d , %d )", col->y, col->cb, col->cr));
+	}
+	else s.append(L"指定なし");
+
+
+	// move the given pointers.
+	return next_exdata(use, data, size_remain, cnt_extra + 1);
 }
 
 static inline bool parse_as_blend(std::wstring& s, ExEdit::ExdataUse const*& use, byte const*& data, int& size_remain)
@@ -317,6 +376,7 @@ static inline std::wstring format_exdata(size_t filter_index, ExEdit::Object con
 		if (use->name != nullptr && use->type != ExEdit::ExdataUse::Type::Padding) {
 			if (parse_as_file(ret, use, data, size_remain) ||
 				parse_as_color(ret, use, data, size_remain) ||
+				parse_as_color_yc(ret, use, data, size_remain) ||
 				parse_as_blend(ret, use, data, size_remain) ||
 				parse_as_text(ret, use, data, size_remain) ||
 				parse_as_scene(ret, use, data, size_remain)) {
