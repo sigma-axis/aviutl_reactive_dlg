@@ -69,6 +69,16 @@ struct TrackInfo {
 };
 static_assert(sizeof(TrackInfo) == 40);
 
+struct CheckAndButton {
+	int32_t val_check; // 0: unchecked, 1: checked. 0 for button or combo.
+	int32_t val_default; // 0: unchecked, 1: checked, -1: button, -2: combo.
+	HWND hwnd_check;
+	HWND hwnd_static;
+	HWND hwnd_button;
+	HWND hwnd_combo;
+};
+static_assert(sizeof(CheckAndButton) == 24);
+
 inline constinit struct ExEdit092 {
 	AviUtl::FilterPlugin* fp;
 	bool init(AviUtl::FilterPlugin* this_fp);
@@ -103,6 +113,7 @@ inline constinit struct ExEdit092 {
 	//WNDPROC		setting_dlg_wndproc;		// 0x02cde0
 	TrackInfo*	trackinfo_left;				// 0x14d4c8
 	TrackInfo*	trackinfo_right;			// 0x14def0
+	CheckAndButton*	checks_buttons;			// 0x168a18
 	int32_t*	track_label_is_dragging;	// 0x158d30; 0: idle, 1: dragging.
 	int32_t*	track_label_start_drag_x;	// 0x179218
 	int32_t*	current_filter_index;		// 0x14965c
@@ -165,6 +176,7 @@ private:
 		//pick_addr(setting_dlg_wndproc,		0x02cde0);
 		pick_addr(trackinfo_left,			0x14d4c8);
 		pick_addr(trackinfo_right,			0x14def0);
+		pick_addr(checks_buttons,			0x168a18);
 		pick_addr(track_label_is_dragging,	0x158d30);
 		pick_addr(track_label_start_drag_x,	0x179218);
 		pick_addr(current_filter_index,		0x14965c);

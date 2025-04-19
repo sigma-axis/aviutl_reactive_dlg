@@ -116,7 +116,7 @@ static inline std::wstring format_checks(size_t filter_index, ExEdit::Object con
 		size_t const index = rel_idx + obj.filter_param[filter_index].check_begin;
 
 		// append the check name and state.
-		ret.append(encode_sys::to_wide_str(filter->check_name[rel_idx]));
+		ret.append(button_text(exedit.checks_buttons[index].hwnd_check));
 		ret.append(leader.check_value[index] == 0 ? L": OFF\n" : L": ON\n");
 	}
 
