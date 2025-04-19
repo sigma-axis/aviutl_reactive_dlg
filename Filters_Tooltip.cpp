@@ -248,9 +248,9 @@ static inline bool parse_as_color_yc(std::wstring& s, ExEdit::ExdataUse const*& 
 		use[1].size == 2 && use[1].type == Type::Padding &&
 		use[2].name != nullptr &&
 		use[2].size == 4 && use[2].type == Type::Number) {
-		std::string_view use1_name = use[2].name;
-		if (use1_name.starts_with(token_status) &&
-			color_idx == use1_name.substr(token_status.size())) {
+		std::string_view use2_name = use[2].name;
+		if (use2_name.starts_with(token_status) &&
+			color_idx == use2_name.substr(token_status.size())) {
 			status = *reinterpret_cast<int32_t const*>(data + 8) != 0;
 			cnt_extra = 2;
 		}

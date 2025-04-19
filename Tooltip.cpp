@@ -134,7 +134,7 @@ bool expt::tooltip_callback(LRESULT& ret, HWND hwnd, UINT message, WPARAM wparam
 				RECT rc;
 				::GetWindowRect(tooltip, &rc);
 				::SendMessageW(tooltip, TTM_ADJUSTRECT, FALSE, reinterpret_cast<LPARAM>(&rc));
-				auto& size = content.size();
+				auto const& size = content.size();
 				rc.right = rc.left + size.cx + 2; // add slight extra space on the right and bottom.
 				rc.bottom = rc.top + size.cy + 1;
 				::SendMessageW(tooltip, TTM_ADJUSTRECT, TRUE, reinterpret_cast<LPARAM>(&rc));
