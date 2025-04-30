@@ -125,8 +125,7 @@ namespace lua_code
 		std::string ret{}; ret.reserve(4 * str.size());
 		for (auto p = str.begin(), e = str.end(); p != e; p++) {
 			if (::IsDBCSLeadByte(*p) != FALSE) {
-				if (auto q = p + 1; q == e ||
-					::IsDBCSLeadByte(*q) != FALSE)
+				if (auto q = p + 1; q == e)
 					// illegal character here. let it escape.
 					append_escaped(ret, *p);
 				else {

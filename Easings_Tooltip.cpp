@@ -167,7 +167,7 @@ public:
 	bool is_tip_worthy() const override
 	{
 		auto const& obj = (*exedit.ObjectArray_ptr)[*exedit.SettingDialogObjectIndex];
-		auto const& mode = obj.track_mode[idx];
+		auto const mode = obj.track_mode[idx];
 		if ((mode.num & 0x0f) == 0) return {}; // 移動無し
 		return settings.mode || settings.graph.enabled ||
 			(settings.values.is_enabled() && !(
@@ -337,7 +337,7 @@ void tooltip_content::measure(HDC dc)
 	int const obj_index = *exedit.SettingDialogObjectIndex;
 	auto const* const objects = *exedit.ObjectArray_ptr;
 	auto const& obj = objects[obj_index];
-	auto const& mode = obj.track_mode[idx];
+	auto const mode = obj.track_mode[idx];
 	auto const& track_info = exedit.trackinfo_left[idx];
 	easing_name_spec const name_spec{ mode };
 
