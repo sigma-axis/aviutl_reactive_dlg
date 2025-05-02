@@ -93,13 +93,6 @@ namespace lua_code
 		constexpr auto should_escape = [](char c) {
 			return ('\0' <= c && c <= '\x1f') || c == '\\' || c == '"';
 		};
-
-		for (auto& c : str) {
-			if (should_escape(c)) goto do_escape;
-		}
-		return {};
-
-	do_escape:
 		constexpr auto append_escaped = [](std::string& s, char c) {
 			s.append(1, '\\');
 			switch (c) {
@@ -121,6 +114,9 @@ namespace lua_code
 			}
 			s.append(1, c);
 		};
+
+		if (std::none_of(str.begin(), str.end(), should_escape) &&
+			(str.empty() || ::IsDBCSLeadByte(str.back()) == FALSE)) return {};
 
 		std::string ret{}; ret.reserve(4 * str.size());
 		for (auto p = str.begin(), e = str.end(); p != e; p++) {
