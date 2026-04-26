@@ -4,6 +4,12 @@
 
 [ダウンロードはこちら．](https://github.com/sigma-axis/aviutl_reactive_dlg/releases) [紹介動画1．](https://www.nicovideo.jp/watch/sm43602590) [紹介動画2．](https://www.nicovideo.jp/watch/sm44864400)
 
+##  お願い
+
+このプラグインを使った動画などでは，ニコニコの親作品にこのプラグインの紹介動画を登録してくれると嬉しいです．任意ではありますが，登録してくれたほうが励みになります．
+
+- 登録 ID: `sm43602590`, `sm44864400`.
+
 
 ## 機能紹介
 
